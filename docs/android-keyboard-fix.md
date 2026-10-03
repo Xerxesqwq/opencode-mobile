@@ -46,4 +46,62 @@ its controls overlap the keyboard, or if the gap below the controls exceeds 64 d
 The launcher uses a navy background with white/cyan code brackets and a cursor.
 Adaptive icons include a monochrome variant. Source SVG and the generator are
 checked in; run `node scripts/generate-launcher-icons.mjs` to regenerate assets.
-Release metadata is 0.4.16 with versionCode 43 and package `cc.agentlabs.opencode`.
+Release metadata is 0.4.16 with versionCode 44 and package `cc.agentlabs.opencode`.
+
+
+## Follow-up: restore layout after keyboard dismissal (versionCode 44)
+
+The first fix kept the composer above Gboard, but Android's keyboard-hide event
+still supplies window coordinates. React Native 0.81.5 can calculate positive
+`KeyboardAvoidingView` padding from these coordinates after the IME disappears.
+Enable avoidance on Android only while `Keyboard` reports it visible, keeping
+the measured offset from the first fix. Remove both listeners when the screen
+unmounts. The iOS behavior is unchanged.
+
+The earlier 0.4.16 APK (versionCode 43) reproduced a 212 px (121.14 dp) extra gap
+after one keyboard cycle. The signed versionCode 44 release restored the initial
+composer position with 0 dp additional gap in all checks:
+
+| Android 15 configuration | Open/close cycles | Multiline draft and send |
+| --- | ---: | --- |
+| Gboard 14.2.09, three-button navigation | 5 | Passed |
+| Gboard 14.2.09, gesture navigation | 5 | Passed |
+| AOSP keyboard, gesture navigation | 3 | Passed |
+
+These checks ran on the 720 × 1600, 280 dpi AOSP x86_64 emulator with Metro
+stopped. Both input and send controls stayed above the real IME frame. The
+phone APK contains only arm64-v8a; the separately built x86_64 release used for
+verification has the identical bundled JavaScript SHA-256. Both are signed with
+the same personal certificate as the earlier code 43 APK, so that installation
+can be updated in place. Physical phone verification remains necessary.
+
+| Earlier APK after hide | Fixed release after hide and send |
+| --- | --- |
+| ![Old gap](verification/android-keyboard-restoration/old-after-hide.png) | ![Restored composer](verification/android-keyboard-restoration/fixed-after-hide.png) |
+
+Exact UI bounds, keyboard frames, APK hashes and signatures are recorded in
+`docs/verification/android-keyboard-restoration/`. Type checking, version parity
+and all 333 existing tests passed. A full Gradle release build succeeded.
+
+### Reproduce the regression check
+
+Install the signed x86_64 release on the emulator and select Gboard. Start the
+fixture, reverse its port, and connect the app to `http://127.0.0.1:14096`:
+
+```sh
+node tests/fixtures/mock-opencode-server.ts --port 14096 --seed-sessions
+adb reverse tcp:14096 tcp:14096
+python3 -m pip install openai uiautomator2
+python3 scripts/android-cua-smoke.py --scenarios keyboard_restoration --include-xml
+```
+
+The deterministic CUA scenario requires no vision API key and always records
+screenshots, hierarchy XML and window frames. `ANDROID_KEYBOARD_OUTPUT_DIR`
+overrides its output directory. It compares every post-hide position to a
+freshly opened chat before any keyboard event; the earlier broken layout would
+fail that comparison. It also verifies that the actual multiline draft appears
+in the transcript after sending. This exercises the keyboard scenario only;
+the separate vision-driven onboarding and coding scenarios were not run.
+
+For another device or IME, run `scripts/check-keyboard-restoration.py` directly
+with `--serial`, `--ime-package`, `--cycles`, `--multiline` and `--send`.

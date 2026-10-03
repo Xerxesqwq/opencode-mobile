@@ -1,0 +1,1 @@
+Fix the extra blank area below the chat input after closing the Android keyboard. Keep the Gboard overlap fix and updated launcher icon.
