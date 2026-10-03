@@ -1,0 +1,26 @@
+{
+  "label": "after-fix",
+  "ime": "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME",
+  "keyboardTop": 1019,
+  "controls": {
+    "chat-message-input": {
+      "bounds": [
+        147,
+        904,
+        615,
+        977
+      ],
+      "aboveKeyboard": true
+    },
+    "chat-send-button": {
+      "bounds": [
+        629,
+        907,
+        699,
+        977
+      ],
+      "aboveKeyboard": true
+    }
+  },
+  "passed": true
+}
