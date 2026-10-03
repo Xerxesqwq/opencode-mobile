@@ -1,0 +1,4 @@
+v0.4.16 — Fix Android keyboard overlap and update the launcher icon
+
+Fix the chat composer being covered by Gboard on Android.
+Replace the default launcher icon with a code and cursor design.
