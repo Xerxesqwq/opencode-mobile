@@ -1,0 +1,23 @@
+{
+  "before": {
+    "clientVersion": "0.4.22",
+    "tests": 4,
+    "passed": 0,
+    "failed": 4,
+    "cases": [
+      "old content remains during selection",
+      "late refresh overwrites messages",
+      "late history page overwrites messages",
+      "failed selection keeps previous session"
+    ]
+  },
+  "after": {
+    "clientVersion": "0.4.23",
+    "clientTests": 353,
+    "gatewayTests": 37,
+    "navigationTests": 13,
+    "failed": 0,
+    "typecheck": "passed",
+    "versionParity": "passed"
+  }
+}

@@ -9,11 +9,12 @@ import { mergeIncomingMessage } from "../lib/message-merge"
 import { isColdSessionLoad, isLiveEventForSession } from "../lib/session-load-reconcile"
 
 // Helper to convert API response to our internal format
-function parseMessages(response: MessageWithParts[]): { messages: Message[]; parts: Record<string, Part[]> } {
+function parseMessages(response: MessageWithParts[], sessionID: string): { messages: Message[]; parts: Record<string, Part[]> } {
   const messages: Message[] = []
   const parts: Record<string, Part[]> = {}
 
   for (const item of response || []) {
+    if (item.info.sessionID !== sessionID) throw new Error("The server returned messages for another session")
     messages.push(item.info)
     parts[item.info.id] = item.parts || []
   }
@@ -28,6 +29,10 @@ function pageSize(): number {
 interface SessionsState {
   sessions: Session[]
   currentSession: Session | null
+  selectedSessionID: string | null
+  selectedConnectionID: string | null
+  sessionLoading: boolean
+  sessionError: string | null
   messages: Message[]
   parts: Record<string, Part[]>
   isLoading: boolean
@@ -89,6 +94,10 @@ function clientFor(directory?: string): Client | null {
 export const useSessions = create<SessionsState>((set, get) => ({
   sessions: [],
   currentSession: null,
+  selectedSessionID: null,
+  selectedConnectionID: null,
+  sessionLoading: false,
+  sessionError: null,
   messages: [],
   parts: {},
   isLoading: false,
@@ -119,61 +128,54 @@ export const useSessions = create<SessionsState>((set, get) => ({
   },
 
   selectSession: async (sessionID, directory) => {
-    // Use directory-specific client if the session belongs to a different project
+    const seq = ++selectSeq
     const connState = useConnections.getState()
-    const client = directory ? connState.clientForDirectory(directory) : connState.client
+    const connection = connState.client
+    const connectionID = connState.activeConnection?.id ?? null
+    const client = directory ? connState.clientForDirectory(directory) : connection
+    const isColdLoad = isColdSessionLoad(get().currentSession?.id, sessionID)
+      || get().selectedConnectionID !== connectionID
+    const current = () => seq === selectSeq && useConnections.getState().client === connection
+    addBreadcrumb({ category: "session", message: "select", data: { sessionID, hasDirectory: Boolean(directory) } })
+
+    // Navigation takes ownership synchronously. Old data and live events must
+    // not remain bound to the new screen while its requests are in flight.
+    set((state) => ({
+      selectedSessionID: sessionID,
+      selectedConnectionID: connectionID,
+      ...(isColdLoad ? { currentSession: null, messages: [], parts: {} } : {}),
+      sessionLoading: isColdLoad || state.sessionLoading,
+      sessionError: null,
+      error: null,
+      hasMore: false,
+      loadingMore: false,
+      sending: { ...state.sending, [sessionID]: false },
+    }))
     if (!client) {
-      set({ error: "No active connection" })
+      set({ sessionError: "No active connection", sessionLoading: false })
       return
     }
 
-    const seq = ++selectSeq
-    addBreadcrumb({ category: "session", message: "select", data: { sessionID, hasDirectory: Boolean(directory) } })
-    // Re-selecting the session already shown on screen (e.g. #121's
-    // useFocusEffect resync firing again on re-entry) is a background
-    // refresh, not a cold load: the screen already has this session's
-    // messages, and live SSE updates keep flowing to them the whole time.
-    // Forcing isLoading back to true here would hide the entire
-    // conversation — including anything streaming in live right now —
-    // behind a spinner for as long as this redundant fetch takes, and if it
-    // stalls (flaky network), the screen looks permanently stuck "loading"
-    // until the user backs out and re-enters (issue #150). Only a
-    // genuinely new/different session needs the blocking spinner.
-    const isColdLoad = isColdSessionLoad(get().currentSession?.id, sessionID)
     try {
-      // Reset optimistic sending — SSE sessionStatus is the source of truth
-      set((state) => ({
-        isLoading: isColdLoad ? true : state.isLoading,
-        error: null,
-        hasMore: false,
-        loadingMore: false,
-        sending: { ...state.sending, [sessionID]: false },
-      }))
-
       const [session, messagesResponse] = await Promise.all([
         client.session.get(sessionID),
         client.session.messages(sessionID, { limit: pageSize() }),
       ])
-
-      // A newer selectSession started while we were fetching — discard this
-      // stale result so it can't clobber the newer selection.
-      if (seq !== selectSeq) return
-
-      // Parse the API response format: array of { info, parts }
-      const { messages, parts } = parseMessages(messagesResponse)
-
+      if (!current()) return
+      if (session.id !== sessionID) throw new Error("The server returned another session")
+      const { messages, parts } = parseMessages(messagesResponse, sessionID)
       set({
         currentSession: session,
         messages,
         parts,
-        isLoading: false,
-        // If we got exactly PAGE_SIZE messages, there are probably more
+        sessionLoading: false,
+        sessionError: null,
         hasMore: messagesResponse.length >= pageSize(),
       })
     } catch (err) {
-      if (seq !== selectSeq) return
+      if (!current()) return
       console.error("Failed to load session:", err)
-      set({ error: "Failed to load session", isLoading: false })
+      set({ sessionError: "Failed to load session", sessionLoading: false })
     }
   },
 
@@ -182,13 +184,16 @@ export const useSessions = create<SessionsState>((set, get) => ({
     const session = get().currentSession
     if (!client || !session) return
     if (get().loadingMore || !get().hasMore) return
+    const seq = selectSeq, connection = useConnections.getState().client
+    const current = () => seq === selectSeq && get().currentSession?.id === session.id && useConnections.getState().client === connection
 
     try {
       set({ loadingMore: true })
 
       // Fetch ALL messages for this session
       const response = await client.session.messages(session.id)
-      const { messages: all, parts: allParts } = parseMessages(response)
+      if (!current()) return
+      const { messages: all, parts: allParts } = parseMessages(response, session.id)
 
       // Merge: use all messages from full fetch, but keep any temp/optimistic messages
       const existing = get().messages
@@ -202,6 +207,7 @@ export const useSessions = create<SessionsState>((set, get) => ({
         hasMore: false, // We loaded everything
       })
     } catch (error) {
+      if (!current()) return
       console.error("Failed to load older messages:", error)
       set({ loadingMore: false })
     }
@@ -216,11 +222,17 @@ export const useSessions = create<SessionsState>((set, get) => ({
     }
 
     try {
+      const seq = ++selectSeq
       const created = await client.session.create({ title })
+      if (seq !== selectSeq || useConnections.getState().client !== client) return created
       // Don't optimistically add to sessions list — let loadSessions() handle it
       // to avoid duplicate key errors from race conditions
       set({
         currentSession: created,
+        selectedSessionID: created.id,
+        selectedConnectionID: connState.activeConnection?.id ?? null,
+        sessionLoading: false,
+        sessionError: null,
         messages: [],
         parts: {},
         hasMore: false,
@@ -354,12 +366,16 @@ export const useSessions = create<SessionsState>((set, get) => ({
     const client = clientFor(get().currentSession?.directory)
     const session = get().currentSession
     if (!client || !session) return
+    const seq = selectSeq, connection = useConnections.getState().client
+    const current = () => seq === selectSeq && get().currentSession?.id === session.id && useConnections.getState().client === connection
 
     try {
       const response = await client.session.messages(session.id)
-      const { messages, parts } = parseMessages(response)
+      if (!current()) return
+      const { messages, parts } = parseMessages(response, session.id)
       set({ messages, parts })
     } catch (error) {
+      if (!current()) return
       set({ error: "Failed to refresh messages" })
     }
   },
@@ -425,11 +441,6 @@ export const useSessions = create<SessionsState>((set, get) => ({
 
         set((state) => ({
           messages: mergeIncomingMessage(state.messages, message),
-          // A live update for the session on screen is proof it has content
-          // to show — clear any stuck spinner even if the initial (or a
-          // redundant re-focus) GET hasn't resolved yet, or never does
-          // (issue #150). Only ever clears, never sets it back to true.
-          isLoading: false,
         }))
         break
       }
@@ -450,9 +461,6 @@ export const useSessions = create<SessionsState>((set, get) => ({
                 ? messageParts.map((p) => (p.id === part.id ? part : p))
                 : [...messageParts, part],
             },
-            // See message.updated above — a live part update is just as
-            // much proof of life as a message update.
-            isLoading: false,
           }
         })
         break
@@ -475,7 +483,6 @@ export const useSessions = create<SessionsState>((set, get) => ({
         set((state) => ({
           sessions: state.sessions.map((s) => (s.id === session.id ? session : s)),
           currentSession: state.currentSession?.id === session.id ? session : state.currentSession,
-          isLoading: isLiveEventForSession(session.id, state.currentSession?.id) ? false : state.isLoading,
         }))
         break
       }

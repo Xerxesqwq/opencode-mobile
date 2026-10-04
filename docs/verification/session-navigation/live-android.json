@@ -1,0 +1,27 @@
+{
+  "status": "success",
+  "inferenceRequests": 0,
+  "sessionMutations": 0,
+  "checks": [
+    {
+      "requestedID": "01a105f8-2541-7552-bd28-8cec57b90c15",
+      "visibleID": "01a105f8-2541-7552-bd28-8cec57b90c15",
+      "stableAfterLiveUpdates": true
+    },
+    {
+      "requestedID": "01a100b4-1192-7db3-903e-21e5ccbba6ae",
+      "visibleID": "01a100b4-1192-7db3-903e-21e5ccbba6ae",
+      "stableAfterLiveUpdates": true
+    },
+    {
+      "requestedID": "01a105f8-2541-7552-bd28-8cec57b90c15",
+      "visibleID": "01a105f8-2541-7552-bd28-8cec57b90c15",
+      "stableAfterLiveUpdates": true
+    },
+    {
+      "requestedID": "01a100b4-1192-7db3-903e-21e5ccbba6ae",
+      "visibleID": "01a100b4-1192-7db3-903e-21e5ccbba6ae",
+      "stableAfterLiveUpdates": true
+    }
+  ]
+}

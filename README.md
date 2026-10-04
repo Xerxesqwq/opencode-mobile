@@ -240,3 +240,8 @@ models disable Fast. Changes apply to subsequent turns of the current session.
 Version 0.4.22 hides empty assistant records and displays generated, viewed and
 Markdown images. Tap a preview for full-screen zoom and drag. Unavailable files
 show a retry action. Gateway media requests use the saved connection credentials.
+
+Version 0.4.23 binds each chat screen to its selected conversation. Delayed
+refreshes and history pages from another conversation are discarded. Failed
+loads show a retry action, and the composer stays disabled until the selected
+conversation is ready.

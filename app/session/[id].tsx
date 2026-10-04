@@ -46,7 +46,7 @@ import { CodexFiles } from "../../src/components/chat/CodexFiles"
 import type { CodexSearchResult } from "../../src/lib/codex"
 import { CodexControls, type CodexTab } from "../../src/components/chat/CodexControls"
 import { codexError } from "../../src/lib/codex"
-import type { Session } from "../../src/lib/sdk"
+import type { Session, Message, Part } from "../../src/lib/sdk"
 import { useSpeech } from "../../src/lib/speech"
 
 // --- Builtin slash commands ---
@@ -87,6 +87,9 @@ function getShortDir(dir?: string): string | null {
   return parts[parts.length - 1] || null
 }
 
+const EMPTY_MESSAGES: Message[] = []
+const EMPTY_PARTS: Record<string, Part[]> = {}
+
 export default function SessionScreen() {
   const { id, directory } = useLocalSearchParams<{ id: string; directory?: string }>()
   const router = useRouter()
@@ -125,32 +128,51 @@ export default function SessionScreen() {
   const jumpRetries = useRef(0)
 
   const {
-    currentSession,
-    messages,
-    parts,
-    isLoading,
-    loadingMore,
-    hasMore,
+    currentSession: loadedSession,
+    messages: loadedMessages,
+    parts: loadedParts,
+    selectedSessionID,
+    selectedConnectionID,
+    sessionLoading,
+    sessionError,
+    sessions,
+    loadingMore: loadedMore,
+    hasMore: loadedHasMore,
     selectSession,
     sendMessage,
     abortSession,
-    loadOlderMessages,
+    loadOlderMessages: loadOlder,
     revertToMessage,
     unrevertSession,
   } = useSessions()
 
-  // Derive sending state for this specific session
-  const isSending = useSessions((s) => !!(currentSession && s.sending[currentSession.id]))
-
   const { authenticateForMessage } = useAuth()
   const { client, clientForDirectory, activeConnection } = useConnections()
+  const matchesRoute = selectedSessionID === id && selectedConnectionID === (activeConnection?.id ?? null)
+  const currentSession = matchesRoute && loadedSession?.id === id ? loadedSession : null
+  const messages = currentSession ? loadedMessages : EMPTY_MESSAGES
+  const parts = currentSession ? loadedParts : EMPTY_PARTS
+  const isLoading = !matchesRoute || sessionLoading
+  const loadError = matchesRoute ? sessionError : null
+  const ready = !!currentSession && !isLoading
+  const hasMore = ready && loadedHasMore, loadingMore = ready && loadedMore
+  const routeTitle = sessions.find(session => session.id === id)?.title
+  const focused = useRef(false)
+  const ownsSession = useCallback(() => {
+    const state = useSessions.getState()
+    return focused.current && state.currentSession?.id === id && state.selectedSessionID === id
+      && state.selectedConnectionID === (useConnections.getState().activeConnection?.id ?? null) && !state.sessionLoading
+  }, [id])
+  const loadOlderMessages = useCallback(async () => { if (ownsSession()) await loadOlder() }, [ownsSession, loadOlder])
+  const isSending = useSessions((state) => ready && !!state.sending[id])
 
   const isCodex = activeConnection?.backend === "codex"
   const [codexTab, setCodexTab] = useState<CodexTab>("status")
   const [showCodex, setShowCodex] = useState(false)
   const openCodex = useCallback((tab: CodexTab) => {
+    if (!ownsSession()) return
     Keyboard.dismiss(); setCodexTab(tab); setShowCodex(true)
-  }, [])
+  }, [ownsSession])
   const updateCodexSession = useCallback((session: Session) => {
     useSessions.getState().handleEvent({ type: "session.updated", properties: { info: session } })
   }, [])
@@ -275,6 +297,7 @@ export default function SessionScreen() {
   }, [id])
 
   const forkCodex = useCallback((messageID?: string) => {
+    if (!ownsSession()) return
     const current = useSessions.getState().currentSession
     const message = messageID ? useSessions.getState().messages.find(message => message.id === messageID) : undefined
     if (!current || !sessionClient || forkingRef.current || revertingRef.current || (messageID && !message?.codexTurnID)) return
@@ -283,10 +306,11 @@ export default function SessionScreen() {
       (message ? (zh ? "新分支从这轮提问之前开始，原提问会放入新分支的输入框。" : "The branch starts before this prompt, which is placed in its composer.") : (zh ? "新分支会保留当前完整对话。" : "The branch keeps the full conversation so far.")) + (zh ? "原会话保持原样。两个会话共用当前工作目录和文件。" : " The original conversation stays intact. Both sessions share the current directory and files."), [
       { text: t("common.cancel"), style: "cancel" },
       { text: zh ? "创建分支" : "Create fork", onPress: async () => {
-        if (forkingRef.current || revertingRef.current) return
+        if (!ownsSession() || forkingRef.current || revertingRef.current) return
         forkingRef.current = true; setForkingCodex(true)
         try {
           const result = await sessionClient.codex.fork(current.id, message?.codexTurnID)
+          if (!ownsSession()) return
           if (result.draft) queueCodexDraft(result.session.id, result.draft)
           setShowCodex(false)
           router.push({ pathname: "/session/[id]", params: { id: result.session.id, directory: result.session.directory } })
@@ -294,7 +318,7 @@ export default function SessionScreen() {
         finally { forkingRef.current = false; setForkingCodex(false) }
       } },
     ])
-  }, [sessionClient, zh, t, router])
+  }, [sessionClient, zh, t, router, ownsSession])
 
   const applyRevertResult = useCallback((result: Awaited<ReturnType<typeof revertToMessage>>) => {
     if (!result.ok) {
@@ -321,6 +345,7 @@ export default function SessionScreen() {
   // closing over props) so MessageBubble's custom memo comparator can bail
   // safely without risking a stale handler.
   const handleMessageLongPress = useCallback((messageID: string) => {
+    if (!ownsSession()) return
     if (isCodex) {
       const message = useSessions.getState().messages.find(message => message.id === messageID)
       const current = useSessions.getState().currentSession
@@ -329,11 +354,13 @@ export default function SessionScreen() {
         (zh ? "会先保存完整备份，再移除这一轮及之后的对话。文件保持当前状态。原提问会放入输入框供你编辑。" : "A full backup will be saved before removing this turn and later conversation. Files keep their current state. The original prompt will be placed in the composer.") + ((inputRef.current.trim() || attachmentsRef.current.length) ? (zh ? "\n输入框中的未发送草稿将被替换。" : "\nYour unsent draft will be replaced.") : ""), [
         { text: t("common.cancel"), style: "cancel" },
         { text: zh ? "备份并回退" : "Back up & rewind", style: "destructive", onPress: async () => {
-          if (revertingRef.current) return
+          if (!ownsSession() || revertingRef.current) return
           revertingRef.current = true; setRevertingCodex(true)
           try {
             const result = await sessionClient.codex.revert(current.id, message.codexTurnID!)
+            if (!ownsSession()) return
             await selectSession(current.id, current.directory)
+            if (!ownsSession()) return
             setTargetMessage(null); setInput(result.draft.text)
             setAttachments(result.draft.images.map(uri => ({ uri, mime: uri.slice(5, uri.indexOf(";")), filename: "image" })))
             const details = `${zh ? "备份：" : "Backup: "}${result.backup.title}${result.draft.omittedAttachments ? (zh ? "\n请重新添加原提问中的文件附件。" : "\nReattach the original file attachments before retrying.") : ""}`
@@ -353,8 +380,9 @@ export default function SessionScreen() {
         text: t("session.actions.editMessage"),
         onPress: () => {
           const doRevert = async () => {
+            if (!ownsSession()) return
             const result = await useSessions.getState().revertToMessage(messageID)
-            applyRevertResult(result)
+            if (ownsSession()) applyRevertResult(result)
           }
           // Editing overwrites the composer — don't silently clobber an
           // in-progress unsent draft.
@@ -374,30 +402,26 @@ export default function SessionScreen() {
         },
       },
     ])
-  }, [applyRevertResult, t, isCodex, sessionClient, zh, selectSession, router])
+  }, [applyRevertResult, t, isCodex, sessionClient, zh, selectSession, router, ownsSession])
 
   const scrollToBottom = useCallback((animated = true) => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated })
   }, [])
 
-  // Re-select on every focus, not just mount. currentSession/messages/
-  // permissions are a single global store, and the native stack keeps screens
-  // underneath a pushed one mounted. Without re-selecting on focus, navigating
-  // to another session and back would leave this screen bound to the *other*
-  // session's data (and its permission/question prompts) — so a user could
-  // approve the wrong session's tool call. useFocusEffect re-binds this screen
-  // to its own session whenever it becomes visible again.
+  // Each visible route owns its session; returning to a kept-alive screen
+  // starts a fresh selection without displaying another route's store data.
   useFocusEffect(
     useCallback(() => {
-      if (!id) return
-      selectSession(id, directory).then(() => {
-        // Re-fetch pending permissions/questions from the server to recover from
-        // missed SSE events or failed optimistic removals
+      focused.current = true
+      let active = true
+      if (id) void selectSession(id, directory).then(() => {
+        if (!active || !ownsSession()) return
         const connState = useConnections.getState()
         const c = directory ? (connState.clientForDirectory(directory) ?? connState.client) : connState.client
-        if (c) refreshPending(c, id)
+        if (c) void refreshPending(c, id)
       })
-    }, [id, directory]),
+      return () => { active = false; focused.current = false }
+    }, [id, directory, client, activeConnection?.id, selectSession, ownsSession]),
   )
 
   // Sync model chip from latest assistant message
@@ -419,6 +443,7 @@ export default function SessionScreen() {
   // Slash command handler
   const handleSlashSelect = useCallback(
     (cmd: SlashCommand) => {
+      if (!ownsSession()) return
       if (cmd.type === "builtin") {
         if (isCodex && CODEX_COMMANDS.some(command => command.trigger === cmd.trigger)) {
           setInput("")
@@ -449,7 +474,7 @@ export default function SessionScreen() {
       }
       setInput(`/${cmd.trigger} `)
     },
-    [router, cycleAgent, isCodex, openCodex, sessionClient, currentSession, updateCodexSession],
+    [router, cycleAgent, isCodex, openCodex, sessionClient, currentSession, updateCodexSession, ownsSession],
   )
 
   // --- Image picking ---
@@ -545,6 +570,7 @@ export default function SessionScreen() {
 
   // --- Send ---
   const handleSend = async () => {
+    if (!ownsSession()) return
     if (revertingRef.current || forkingRef.current || (!input.trim() && attachments.length === 0)) return
     const builtin = attachments.length === 0 && isCodex ? allCommands.find(command => command.type === "builtin" && input.trim() === `/${command.trigger}`) : undefined
     if (builtin) { handleSlashSelect(builtin); return }
@@ -554,6 +580,7 @@ export default function SessionScreen() {
       return
     }
 
+    if (!ownsSession()) return
     const text = input.trim()
     const files = [...attachments]
     setInput("")
@@ -624,7 +651,7 @@ export default function SessionScreen() {
   }, [reconnectAttempts])
 
   const handlePermissionReply = async (requestID: string, reply: "once" | "always" | "reject") => {
-    if (!sessionClient || !sessionID) return
+    if (!ownsSession() || !sessionClient || !sessionID) return
     // Snapshot for rollback
     const snapshot = useEvents.getState().permissions[sessionID] || []
     // Optimistically remove from UI
@@ -647,7 +674,7 @@ export default function SessionScreen() {
   }
 
   const handleQuestionReply = async (requestID: string, answers: string[][]) => {
-    if (!sessionClient || !sessionID) return
+    if (!ownsSession() || !sessionClient || !sessionID) return
     const snapshot = useEvents.getState().questions[sessionID] || []
     useEvents.setState((state) => ({
       questions: {
@@ -667,7 +694,7 @@ export default function SessionScreen() {
   }
 
   const handleQuestionReject = async (requestID: string) => {
-    if (!sessionClient || !sessionID) return
+    if (!ownsSession() || !sessionClient || !sessionID) return
     const snapshot = useEvents.getState().questions[sessionID] || []
     useEvents.setState((state) => ({
       questions: {
@@ -688,12 +715,13 @@ export default function SessionScreen() {
 
   const handleModelSelect = useCallback(
     (providerID: string, modelID: string) => {
+      if (!ownsSession()) return
       if (isCodex && sessionClient && currentSession) {
         void sessionClient.codex.update(currentSession.id, { model: modelID }).then(updateCodexSession)
           .catch(error => Alert.alert("Codex", codexError(error)))
       } else setModel({ providerID, modelID })
     },
-    [setModel, isCodex, sessionClient, currentSession, updateCodexSession],
+    [setModel, isCodex, sessionClient, currentSession, updateCodexSession, ownsSession],
   )
 
   // Current agent display
@@ -713,18 +741,18 @@ export default function SessionScreen() {
     <>
       <Stack.Screen
         options={{
-          title: currentSession?.title || t("session.titleFallback"),
+          title: currentSession?.title || routeTitle || t("session.titleFallback"),
           headerRight: () => (
             <View style={s.headerRight}>
-              {isCodex && <TouchableOpacity testID="codex-search-button" onPress={() => { Keyboard.dismiss(); setShowSearch(true) }} hitSlop={8}><Ionicons name="search-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
-              {isCodex && <TouchableOpacity testID="codex-files-button" onPress={() => { Keyboard.dismiss(); setShowFiles(true) }} hitSlop={8}><Ionicons name="git-compare-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
+              {isCodex && <TouchableOpacity disabled={!ready} testID="codex-search-button" onPress={() => { Keyboard.dismiss(); setShowSearch(true) }} hitSlop={8}><Ionicons name="search-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
+              {isCodex && <TouchableOpacity disabled={!ready} testID="codex-files-button" onPress={() => { Keyboard.dismiss(); setShowFiles(true) }} hitSlop={8}><Ionicons name="git-compare-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
               {shortDir && (
                 <View style={[s.dirBadge, isDark && s.dirBadgeDark]}>
                   <Ionicons name="folder-outline" size={14} color={isDark ? "#888888" : "#666666"} />
                   <Text style={[s.dirText, isDark && s.dirTextDark]}>{shortDir}</Text>
                 </View>
               )}
-              <TouchableOpacity testID="codex-controls-button" onPress={() => isCodex ? openCodex("status") : setShowInfo((v) => !v)} hitSlop={8}>
+              <TouchableOpacity disabled={!ready} testID="codex-controls-button" onPress={() => isCodex ? openCodex("status") : setShowInfo((v) => !v)} hitSlop={8}>
                 <Ionicons
                   name={showInfo ? "stats-chart" : "stats-chart-outline"}
                   size={20}
@@ -738,6 +766,7 @@ export default function SessionScreen() {
 
       <View
         ref={keyboardContainerRef}
+        testID={`chat-route-${id}`}
         collapsable={false}
         style={s.container}
         onLayout={() => {
@@ -800,6 +829,7 @@ export default function SessionScreen() {
               <Text style={s.bannerText}>{t("session.banners.reverted")}</Text>
               <TouchableOpacity
                 onPress={() => {
+                  if (!ownsSession()) return
                   unrevertSession()
                   // The composer was prefilled with the reverted message's text/
                   // attachments (see applyRevertResult) — clear it so Undo doesn't
@@ -814,12 +844,18 @@ export default function SessionScreen() {
             </View>
           )}
 
+          {loadError && currentSession && <View style={s.banner}><Text style={s.bannerText}>{zh ? "刷新失败，请重试" : "Refresh failed. Try again."}</Text><TouchableOpacity testID="chat-retry-session" onPress={() => selectSession(id, directory)}><Text style={s.bannerAction}>{zh ? "重试" : "Retry"}</Text></TouchableOpacity></View>}
           {isLoading ? (
-            <View style={s.loading}>
+            <View testID="chat-loading-session" style={s.loading}>
               <ActivityIndicator size="large" color={isDark ? "#ffffff" : "#0a0a0a"} />
             </View>
+          ) : loadError && !currentSession ? (
+            <View testID="chat-session-error" style={s.loading}>
+              <Text style={{ color: isDark ? "#ffffff" : "#333333", marginBottom: 16 }}>{zh ? "会话加载失败，请重试" : "Could not load this conversation. Try again."}</Text>
+              <TouchableOpacity testID="chat-retry-session" onPress={() => selectSession(id, directory)} style={{ padding: 16 }}><Text style={{ color: "#8b5cf6", fontSize: 16 }}>{zh ? "重新加载" : "Reload conversation"}</Text></TouchableOpacity>
+            </View>
           ) : (
-            <View style={s.listWrap}>
+            <View testID={`chat-content-${currentSession?.id || "empty"}`} style={s.listWrap}>
               <FlatList
                 ref={flatListRef}
                 data={messageData}
@@ -902,12 +938,12 @@ export default function SessionScreen() {
           ))}
 
           {/* Slash popover */}
-          {slashActive && (
+          {ready && slashActive && (
             <SlashPopover query={slashQuery} commands={allCommands} isDark={isDark} onSelect={handleSlashSelect} />
           )}
 
           {/* Agent/model toolbar */}
-          <View style={[s.toolbar, isDark && s.toolbarDark]}>
+          <View pointerEvents={ready ? "auto" : "none"} style={[s.toolbar, isDark && s.toolbarDark, !ready && { opacity: 0.4 }]}>
             <TouchableOpacity
               style={[s.agentChip, { borderColor: agentColor }]}
               onPress={() => isCodex ? openCodex("mode") : cycleAgent()}
@@ -958,12 +994,12 @@ export default function SessionScreen() {
           >
             <View style={s.inputRow}>
               {/* Attach button */}
-              <TouchableOpacity style={s.attachBtn} onPress={pickFromLibrary} onLongPress={pickFromCamera}>
+              <TouchableOpacity disabled={!ready} style={s.attachBtn} onPress={pickFromLibrary} onLongPress={pickFromCamera}>
                 <Ionicons name="add-circle-outline" size={26} color={isDark ? "#888888" : "#666666"} />
               </TouchableOpacity>
 
               {/* Clipboard paste button */}
-              <TouchableOpacity style={s.attachBtn} onPress={pasteFromClipboard}>
+              <TouchableOpacity disabled={!ready} style={s.attachBtn} onPress={pasteFromClipboard}>
                 <Ionicons name="clipboard-outline" size={22} color={isDark ? "#888888" : "#666666"} />
               </TouchableOpacity>
 
@@ -979,20 +1015,20 @@ export default function SessionScreen() {
                 placeholderTextColor={speech.listening ? "#ef4444" : isDark ? "#666666" : "#999999"}
                 value={speech.listening ? speech.transcript : input}
                 onChangeText={speech.listening ? undefined : setInput}
-                editable={!speech.listening}
+                editable={ready && !speech.listening}
                 multiline
                 maxLength={10000}
                 testID="chat-message-input"
               />
               {/* Stop button: only when busy and no input */}
               {isSending && !input.trim() && attachments.length === 0 && !speech.listening && (
-                <TouchableOpacity style={s.stopBtn} onPress={abortSession}>
+                <TouchableOpacity style={s.stopBtn} onPress={() => { if (ownsSession()) void abortSession() }}>
                   <Ionicons name="stop" size={20} color="#ffffff" />
                 </TouchableOpacity>
               )}
               {/* Mic button: when no input, not sending, and not listening */}
               {!isSending && !input.trim() && attachments.length === 0 && !speech.listening && (
-                <TouchableOpacity style={s.micBtn} onPress={speech.start}>
+                <TouchableOpacity disabled={!ready} style={s.micBtn} onPress={speech.start}>
                   <Ionicons name="mic" size={22} color={isDark ? "#888888" : "#666666"} />
                 </TouchableOpacity>
               )}
@@ -1004,7 +1040,7 @@ export default function SessionScreen() {
               )}
               {/* Send button: when there's input */}
               {!speech.listening && (input.trim() || attachments.length > 0) && (
-                <TouchableOpacity style={s.sendBtn} onPress={handleSend} testID="chat-send-button">
+                <TouchableOpacity disabled={!ready} style={[s.sendBtn, !ready && { opacity: 0.4 }]} onPress={handleSend} testID="chat-send-button">
                   <Ionicons name="send" size={20} color="#ffffff" />
                 </TouchableOpacity>
               )}

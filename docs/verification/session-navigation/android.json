@@ -1,0 +1,14 @@
+{
+  "status": "success",
+  "inferenceRequests": 0,
+  "checks": [
+    "A loading hides B and disables composer",
+    "A failure exposes retry",
+    "retry loads A",
+    "late B refresh cannot replace A",
+    "repeated A/B list selection",
+    "back navigation restores A and its unsent draft",
+    "prompt stays in A",
+    "request directory matches session"
+  ]
+}

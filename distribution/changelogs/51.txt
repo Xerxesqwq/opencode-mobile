@@ -1,0 +1,4 @@
+v0.4.23
+Fix opening the wrong conversation after switching sessions.
+Keep delayed refreshes and history pages in their original session.
+Show a retry action when a conversation fails to load.

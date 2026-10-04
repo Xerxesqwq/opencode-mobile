@@ -1713,6 +1713,16 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_session_navigation():
+    """Exercise delayed and failed session loads against a local fixture."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/session-navigation")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-session-navigation.py")),
+        "--output-dir", str(output),
+    ], timeout=480, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def run_scenario_codex_media():
     """Verify image previews and empty-message filtering without model calls."""
     output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-media")).resolve()
@@ -2112,6 +2122,7 @@ Examples:
             "codex_fork": run_scenario_codex_fork,
             "codex_fast": run_scenario_codex_fast,
             "codex_media": run_scenario_codex_media,
+            "session_navigation": run_scenario_session_navigation,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(
