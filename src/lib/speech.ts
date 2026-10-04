@@ -43,8 +43,9 @@ export function useSpeech(onResult: (text: string) => void): SpeechState & Speec
   })
 
   useSpeechRecognitionEvent("error", (event) => {
-    // "no-speech" is not really an error — user just didn't say anything
-    if (event.error === "no-speech") {
+    // The native module emits "aborted" when a chat unmounts or cancels.
+    // Other mounted chats receive that event too.
+    if (event.error === "no-speech" || event.error === "aborted") {
       setListening(false)
       return
     }
@@ -77,7 +78,7 @@ export function useSpeech(onResult: (text: string) => void): SpeechState & Speec
   }, [])
 
   // Stop the native recognition session when the screen unmounts — otherwise
-  // the mic stays hot in the background. abort() is a no-op when not listening.
+  // the mic stays hot in the background. Its cancellation event is handled above.
   useEffect(() => {
     return () => {
       ExpoSpeechRecognitionModule.abort()

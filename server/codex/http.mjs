@@ -1,4 +1,4 @@
-import { searchHistory, fileChanges, revertHistory, archiveSessions, taskOverview } from './workbench.mjs'
+import { searchHistory, fileChanges, forkHistory, revertHistory, archiveSessions, taskOverview } from './workbench.mjs'
 import { controlOptions, modelCatalog } from './controls.mjs'
 import http from 'node:http'
 import https from 'node:https'
@@ -68,7 +68,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
   }
   async function dispatch(method, url, route, req, cwd, init) {
     if (method === 'GET') {
-      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.3.0', backend: 'codex', codex: init.userAgent }
+      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.4.0', backend: 'codex', codex: init.userAgent }
       if (url.pathname === '/path') return { home: homedir(), state: init.codexHome, config: init.codexHome, worktree: cwd, directory: cwd }
       if (url.pathname === '/project/current') return project(cwd)
       if (url.pathname === '/project') return [...new Set((await bridge.list()).map(t => t.cwd))].map(project)
@@ -114,6 +114,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
     }
     if (route[0] === 'session' && route.length >= 2) {
       const id = route[1]
+      if (method === 'POST' && route[2] === 'codex' && route[3] === 'fork') return forkHistory(bridge, id, (await json(req)).beforeTurnId)
       if (method === 'POST' && route[2] === 'codex' && route[3] === 'revert') return revertHistory(bridge, id, (await json(req)).beforeTurnId)
       if (method === 'PATCH' && route[2] === 'codex') return bridge.updateSettings(id, await json(req))
       if (method === 'POST' && route[2] === 'compact') return bridge.compact(id)

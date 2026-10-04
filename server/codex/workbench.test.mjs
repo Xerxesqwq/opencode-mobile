@@ -2,9 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { Bridge } from './bridge.mjs'
-import { searchHistory, fileChanges, revertHistory, archiveSessions, taskOverview, taskStatus } from './workbench.mjs'
+import { searchHistory, fileChanges, forkHistory, revertHistory, archiveSessions, taskOverview, taskStatus } from './workbench.mjs'
 
-const makeThread = id => ({ id, cwd: '/workspace', name: id, preview: '', model: 'model', status: { type: 'idle' }, createdAt: 1, updatedAt: 2, canAcceptDirectInput: true })
+const makeThread = id => ({ id, cwd: '/workspace', name: id, preview: '', model: 'model', modelProvider: 'test-provider', status: { type: 'idle' }, createdAt: 1, updatedAt: 2, canAcceptDirectInput: true })
 const turn = (id, text) => ({ id, status: 'completed', startedAt: 1, items: [{ id: `${id}-user`, type: 'userMessage', content: [{ type: 'text', text }] }, { id: `${id}-reply`, type: 'agentMessage', text: 'Reply ' + text }] })
 class RPC extends EventEmitter {
   records = new Map([['test', { thread: makeThread('test'), turns: [turn('t2', 'second'), turn('t1', 'first')], archived: false }]])
@@ -22,9 +22,12 @@ class RPC extends EventEmitter {
       return { data: structuredClone(record.turns.slice(offset, offset + limit)), nextCursor: offset + limit < record.turns.length ? String(offset + limit) : null }
     }
     if (method === 'thread/fork') {
-      const backup = structuredClone(record); backup.thread.id = 'backup'; this.records.set('backup', backup)
+      const backup = structuredClone(record); backup.thread.id = 'backup'
+      if (params.beforeTurnId) backup.turns = backup.turns.slice(backup.turns.findIndex(turn => turn.id === params.beforeTurnId) + 1)
+      this.records.set('backup', backup)
       return { thread: backup.thread }
     }
+    if (method === 'thread/settings/update') this.emit('message', { method: 'thread/settings/updated', params: { threadId: params.threadId, threadSettings: { ...params } } })
     if (method === 'thread/name/set') record.thread.name = params.name
     if (method === 'thread/revert') record.turns = record.turns.slice(record.turns.findIndex(turn => turn.id === params.beforeTurnId) + 1)
     if (method === 'thread/archive') record.archived = true
@@ -97,4 +100,44 @@ test('task status prioritizes native approval/input flags and reads failures wit
   const result = await taskOverview(bridge)
   assert.equal(result.items[0].state, 'failed'); assert.equal(result.items[0].error, 'failure example')
   assert.equal(rpc.calls.some(call => call.method === 'thread/resume'), false)
+})
+
+
+test('full fork preserves source history and creates an inert branch', async () => {
+  const { rpc, bridge } = fixture()
+  const before = structuredClone(rpc.records.get('test'))
+  const result = await forkHistory(bridge, 'test')
+  assert.equal(result.sourceID, 'test'); assert.equal(result.draft, null)
+  assert.match(result.session.title, /^Fork · test/)
+  assert.deepEqual(rpc.records.get('test'), before)
+  assert.equal(rpc.records.get('backup').turns.length, 2)
+  const params = rpc.calls.find(call => call.method === 'thread/fork').params
+  assert.equal(params.deferGoalContinuation, true)
+  assert.equal(params.beforeTurnId, undefined)
+  assert.equal(params.model, 'model'); assert.equal(params.modelProvider, 'test-provider')
+  assert.equal(params.cwd, '/workspace')
+  const settings = rpc.calls.find(call => call.method === 'thread/settings/update').params
+  assert.equal(settings.threadId, 'backup'); assert.equal(settings.effort, 'high')
+  assert.equal(settings.approvalPolicy, 'on-request')
+  assert.equal(rpc.calls.some(call => ['thread/revert', 'turn/start', 'thread/archive'].includes(call.method)), false)
+})
+
+test('fork before a prompt copies only earlier turns and returns an editable draft', async () => {
+  const { rpc, bridge } = fixture()
+  rpc.records.get('test').turns[0].items[0].content.push({ type: 'image', url: 'data:image/jpeg;base64,YQ==' }, { type: 'localImage', path: '/file.png' })
+  const result = await forkHistory(bridge, 'test', 't2')
+  assert.deepEqual(rpc.records.get('backup').turns.map(turn => turn.id), ['t1'])
+  assert.equal(rpc.records.get('test').turns.length, 2)
+  assert.equal(result.draft.text, 'second')
+  assert.deepEqual(result.draft.images, ['data:image/jpeg;base64,YQ=='])
+  assert.equal(result.draft.omittedAttachments, 1)
+})
+
+test('invalid and active forks fail before creating a branch', async () => {
+  const { rpc, bridge } = fixture()
+  await assert.rejects(forkHistory(bridge, 'test', ''), /valid turn/)
+  await assert.rejects(forkHistory(bridge, 'test', 'absent'), /still in/)
+  rpc.records.get('test').thread.status.type = 'active'
+  await assert.rejects(forkHistory(bridge, 'test'), /finish/)
+  assert.equal(rpc.calls.some(call => call.method === 'thread/fork'), false)
 })

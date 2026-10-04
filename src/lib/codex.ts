@@ -87,3 +87,5 @@ export interface CodexFileChanges {
   files: Array<{ path: string; kind: string; diff: string; status: string }>
 }
 export type CodexTaskState = "running" | "approval" | "input" | "failed" | "completed" | "interrupted" | "idle"
+
+export interface CodexDraft { text: string; images: string[]; omittedAttachments: number }

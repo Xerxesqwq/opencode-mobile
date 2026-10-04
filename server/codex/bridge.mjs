@@ -145,6 +145,11 @@ export class Bridge extends EventEmitter {
     if (this.mutations.has(id)) throw Object.assign(new Error('A session change is in progress'), { status: 409 })
     const state = await this.attach(id)
     const params = await settingsPatch(this.rpc, state, body)
+    return this.applySettings(id, params)
+  }
+
+  async applySettings(id, params) {
+    const state = await this.attach(id)
     // The native notification contains the effective settings. A brand-new
     // empty thread has no rollout yet, so thread/resume can fail before its first turn.
     let timer, listener

@@ -77,6 +77,43 @@ export async function mutateThread(bridge, id, operation) {
   try { return await operation() } finally { bridge.mutations.delete(id) }
 }
 
+function promptDraft(user) {
+  return { text: user.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
+    images: user.content.filter(part => part.type === 'image' && /^data:image\//.test(part.url || '')).map(part => part.url),
+    omittedAttachments: user.content.filter(part => part.type !== 'text' && !(part.type === 'image' && /^data:image\//.test(part.url || ''))).length }
+}
+
+export async function forkHistory(bridge, id, beforeTurnId) {
+  if (beforeTurnId !== undefined && (typeof beforeTurnId !== 'string' || !beforeTurnId)) throw fail(400, 'Choose a valid turn to fork before')
+  return mutateThread(bridge, id, async () => {
+    const thread = await idleThread(bridge, id)
+    if (thread.canAcceptDirectInput === false) throw fail(409, 'This thread is managed by its parent')
+    const source = (await bridge.attach(id)).settings
+    let user
+    if (beforeTurnId) {
+      const turn = (await allTurns(bridge.rpc, id)).find(turn => turn.id === beforeTurnId)
+      user = turn?.items.find(item => item.type === 'userMessage')
+      if (!user) throw fail(400, 'Choose a user turn that is still in the conversation')
+    }
+    const result = await bridge.rpc.call('thread/fork', { threadId: id, model: source.model ?? undefined, modelProvider: thread.modelProvider, cwd: thread.cwd, ...(beforeTurnId ? { beforeTurnId } : {}), excludeTurns: true, deferGoalContinuation: true })
+    const branch = result.thread.id
+    try {
+      await bridge.rpc.call('thread/name/set', { threadId: branch, name: `Fork · ${thread.name || thread.preview || 'Codex'} · ${new Date().toISOString()}` })
+      const params = { threadId: branch, cwd: thread.cwd, serviceTier: source.serviceTier }
+      for (const key of ['model', 'effort', 'approvalPolicy', 'approvalsReviewer']) if (source[key] != null) params[key] = source[key]
+      if (source.activePermissionProfile?.id) params.permissions = source.activePermissionProfile.id
+      else if (source.sandboxPolicy) params.sandboxPolicy = source.sandboxPolicy
+      if (source.collaborationMode) params.collaborationMode = { ...source.collaborationMode,
+        settings: { ...source.collaborationMode.settings, model: source.model, reasoning_effort: source.effort } }
+      // Native fork can restore configuration defaults. Confirm the source's
+      // current effective settings on the new branch before returning it.
+      const session = await bridge.applySettings(branch, params)
+      bridge.event('codex.library.changed', { sessionID: branch })
+      return { session, sourceID: id, draft: user ? promptDraft(user) : null }
+    } catch (error) { throw fail(error.status || 502, `${error.message}. Created branch: ${branch}`) }
+  })
+}
+
 export async function revertHistory(bridge, id, beforeTurnId) {
   if (typeof beforeTurnId !== 'string' || !beforeTurnId) throw fail(400, 'Choose a turn to retry')
   return mutateThread(bridge, id, async () => {
@@ -99,9 +136,7 @@ export async function revertHistory(bridge, id, beforeTurnId) {
     const state = await bridge.attach(id)
     bridge.event('codex.history.changed', { sessionID: id })
     return { session: bridge.describe(state.thread), backup: session(backup.thread),
-      draft: { text: user.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
-        images: user.content.filter(part => part.type === 'image' && /^data:image\//.test(part.url || '')).map(part => part.url),
-        omittedAttachments: user.content.filter(part => part.type !== 'text' && !(part.type === 'image' && /^data:image\//.test(part.url || ''))).length } }
+      draft: promptDraft(user) }
   })
 }
 

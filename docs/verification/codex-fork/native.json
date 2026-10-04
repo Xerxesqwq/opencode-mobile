@@ -1,0 +1,21 @@
+{
+  "source": "01a10607-18a6-78d0-b42b-8d07b743af44",
+  "title": "Fork check 1791102490731",
+  "firstTurn": "01a10607-1cc0-77a2-9abf-afacfd04946b",
+  "secondTurn": "01a10607-3a3f-7a32-83bc-044e39ba05ec",
+  "full": "01a10607-4428-7410-b1bd-c791a419fbdd",
+  "partial": "01a10607-44a4-79c3-b7e1-68f1f2e6f7cc",
+  "empty": "01a10607-454e-7b51-acd0-161f9517192d",
+  "cwd": "/home/xerxes/droid/codex-fork-fixture",
+  "checks": [
+    "full history fork",
+    "fork before selected turn",
+    "fork before first turn",
+    "editable draft",
+    "inherited model effort approvals sandbox",
+    "branch continuation",
+    "source history unchanged",
+    "files unchanged"
+  ],
+  "passed": true
+}

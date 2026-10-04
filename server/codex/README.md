@@ -15,6 +15,7 @@ Tested protocol: Codex CLI/app-server **0.160.0**. The experimental paginated hi
 - Compact context after the active turn finishes, inspect context and cumulative token usage, and view account usage windows.
 - Inspect live task plans, loaded instruction paths, and the latest turn's file diff.
 - Search all stored conversation turns, with prompt/reply/tool filters and message links.
+- Fork the complete conversation or start before a selected prompt. The branch inherits effective model, reasoning, permission and approval settings and waits for explicit input. Both conversations share the current directory and files.
 - Rewind from a user prompt after saving a complete backup, then edit and retry. File contents remain unchanged.
 - Review recorded file patches by turn and path, with line numbers, syntax colors, and collapsible context.
 - Archive and restore up to 100 selected sessions, with per-session failure reporting.
@@ -84,7 +85,7 @@ Forward the router's external port to this Caddy listener and permit it in the h
 
 ## Android
 
-Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Use the search and file icons in the chat header for history search and file review. Tap the rewind button on a user message, or long-press its header, to back up and rewind from that prompt. The session screen opens the task dashboard and session organizer. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/model` and `/new` run locally or open the matching controls.
+Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Use the search and file icons in the chat header for history search and file review. Tap the rewind button on a user message, or long-press its header, to back up and rewind from that prompt. The branch icon forks before that prompt and restores it as a draft in the new branch. The status panel also offers a full conversation fork. Forking is available after the current task finishes. The session screen opens the task dashboard and session organizer. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/model` and `/new` run locally or open the matching controls.
 
 Context uses the native `last.totalTokens` and `modelContextWindow`; cached input and reasoning output are subsets, not additional tokens. Codex 0.160 metadata-only resume omits usage replay for loaded threads. The gateway restores the latest token-count record from at most the last 8 MiB of the daemon-provided rollout, restricted to the daemon's state directory. It returns only token counts; live notifications supersede the restored snapshot. If no snapshot is available, the panel waits for the next native usage event.
 
@@ -101,6 +102,7 @@ Opt-in live checks create dedicated test threads:
 
 ```sh
 CODEX_WORKBENCH_FIXTURE=/absolute/path/to/dedicated-test-directory node workbench-live-check.mjs
+CODEX_WORKBENCH_FIXTURE=/absolute/path/to/dedicated-test-directory node fork-live-check.mjs
 node live-controls-check.mjs
 CODEX_GATEWAY_URL=https://your-host:port \
 CODEX_GATEWAY_USERNAME=opencode \

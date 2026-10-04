@@ -20,12 +20,13 @@ interface Props {
   // revert action sheet. Identified by messageID (not a closure over parts)
   // so it stays correct even if the memo below bails on a stale render.
   onLongPress?: (messageID: string) => void
+  onFork?: (messageID: string) => void
 }
 
 // TODO: Replace with streamdown-rn once React 19 types PR lands - it has
 // built-in block-level memoization that eliminates re-renders for stable blocks
 export const MessageBubble = memo(
-  function MessageBubble({ message, parts, isDark, onLongPress }: Props) {
+  function MessageBubble({ message, parts, isDark, onLongPress, onFork }: Props) {
     const isUser = message.role === "user"
 
     const textParts = parts.filter((p) => p.type === "text")
@@ -59,6 +60,7 @@ export const MessageBubble = memo(
           {message.model && <Text style={[s.modelTag, isDark && s.modelTagDark]}>{message.model.modelID}</Text>}
           {!isUser && message.modelID && <Text style={[s.modelTag, isDark && s.modelTagDark]}>{message.modelID}</Text>}
           {isUser && message.codexTurnID && onLongPress && <TouchableOpacity testID={`codex-rewind-${message.id}`} accessibilityLabel="Rewind and edit prompt" onPress={() => onLongPress(message.id)} hitSlop={8} style={{ marginLeft: "auto", padding: 4 }}><Ionicons name="play-back-outline" size={17} color="#8b5cf6" /></TouchableOpacity>}
+          {isUser && message.codexTurnID && onFork && <TouchableOpacity testID={`codex-fork-${message.id}`} accessibilityLabel="Fork before this prompt" onPress={() => onFork(message.id)} hitSlop={8} style={{ padding: 4, marginLeft: 8 }}><Ionicons name="git-branch-outline" size={17} color="#8b5cf6" /></TouchableOpacity>}
         </View>
 
         {/* Image attachments */}

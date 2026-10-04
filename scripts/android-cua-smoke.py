@@ -1713,6 +1713,16 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_codex_fork():
+    """Verify full and selected-prompt forks against a dedicated native fixture."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-fork")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-fork.py")),
+        "--output-dir", str(output),
+    ], timeout=360, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def run_scenario_codex_workbench():
     """Check search, rewind, file review, archives and live tasks on Android."""
     output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-workbench")).resolve()
@@ -2079,6 +2089,7 @@ Examples:
             "keyboard_restoration": run_scenario_keyboard_restoration,
             "codex_direct": run_scenario_codex_direct,
             "codex_workbench": run_scenario_codex_workbench,
+            "codex_fork": run_scenario_codex_fork,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(

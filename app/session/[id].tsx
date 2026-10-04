@@ -1,3 +1,4 @@
+import { queueCodexDraft, takeCodexDraft } from "../../src/lib/codex-drafts"
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import {
   View,
@@ -115,6 +116,8 @@ export default function SessionScreen() {
   const [showFiles, setShowFiles] = useState(false)
   const [searchJump, setSearchJump] = useState(0)
   const [targetMessage, setTargetMessage] = useState<string | null>(null)
+  const [forkingCodex, setForkingCodex] = useState(false)
+  const forkingRef = useRef(false)
   const [revertingCodex, setRevertingCodex] = useState(false)
   const revertingRef = useRef(false)
   const jumpRetries = useRef(0)
@@ -260,6 +263,36 @@ export default function SessionScreen() {
   const inputRef = useRef(input)
   inputRef.current = input
 
+  useEffect(() => {
+    const draft = takeCodexDraft(id)
+    if (!draft) return
+    setInput(draft.text)
+    setAttachments(draft.images.map(uri => ({ uri, mime: uri.slice(5, uri.indexOf(";")), filename: "image" })))
+    if (draft.omittedAttachments) Alert.alert("Codex", zh ? "请重新添加原提问中的文件附件。" : "Reattach the original file attachments before sending.")
+  }, [id])
+
+  const forkCodex = useCallback((messageID?: string) => {
+    const current = useSessions.getState().currentSession
+    const message = messageID ? useSessions.getState().messages.find(message => message.id === messageID) : undefined
+    if (!current || !sessionClient || forkingRef.current || revertingRef.current || (messageID && !message?.codexTurnID)) return
+    Keyboard.dismiss()
+    Alert.alert(zh ? "创建会话分支？" : "Fork conversation?",
+      (message ? (zh ? "新分支从这轮提问之前开始，原提问会放入新分支的输入框。" : "The branch starts before this prompt, which is placed in its composer.") : (zh ? "新分支会保留当前完整对话。" : "The branch keeps the full conversation so far.")) + (zh ? "原会话保持原样。两个会话共用当前工作目录和文件。" : " The original conversation stays intact. Both sessions share the current directory and files."), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: zh ? "创建分支" : "Create fork", onPress: async () => {
+        if (forkingRef.current || revertingRef.current) return
+        forkingRef.current = true; setForkingCodex(true)
+        try {
+          const result = await sessionClient.codex.fork(current.id, message?.codexTurnID)
+          if (result.draft) queueCodexDraft(result.session.id, result.draft)
+          setShowCodex(false)
+          router.push({ pathname: "/session/[id]", params: { id: result.session.id, directory: result.session.directory } })
+        } catch (error) { Alert.alert("Codex", codexError(error)) }
+        finally { forkingRef.current = false; setForkingCodex(false) }
+      } },
+    ])
+  }, [sessionClient, zh, t, router])
+
   const applyRevertResult = useCallback((result: Awaited<ReturnType<typeof revertToMessage>>) => {
     if (!result.ok) {
       if (result.reason === "unsupported") {
@@ -288,7 +321,7 @@ export default function SessionScreen() {
     if (isCodex) {
       const message = useSessions.getState().messages.find(message => message.id === messageID)
       const current = useSessions.getState().currentSession
-      if (!message?.codexTurnID || !current || !sessionClient || revertingRef.current) return
+      if (!message?.codexTurnID || !current || !sessionClient || revertingRef.current || forkingRef.current) return
       Alert.alert(zh ? "回退并编辑这轮提问？" : "Rewind and edit this prompt?",
         (zh ? "会先保存完整备份，再移除这一轮及之后的对话。文件保持当前状态。原提问会放入输入框供你编辑。" : "A full backup will be saved before removing this turn and later conversation. Files keep their current state. The original prompt will be placed in the composer.") + ((inputRef.current.trim() || attachmentsRef.current.length) ? (zh ? "\n输入框中的未发送草稿将被替换。" : "\nYour unsent draft will be replaced.") : ""), [
         { text: t("common.cancel"), style: "cancel" },
@@ -509,7 +542,7 @@ export default function SessionScreen() {
 
   // --- Send ---
   const handleSend = async () => {
-    if (revertingRef.current || (!input.trim() && attachments.length === 0)) return
+    if (revertingRef.current || forkingRef.current || (!input.trim() && attachments.length === 0)) return
     const builtin = attachments.length === 0 && isCodex ? allCommands.find(command => command.type === "builtin" && input.trim() === `/${command.trigger}`) : undefined
     if (builtin) { handleSlashSelect(builtin); return }
     const authenticated = await authenticateForMessage()
@@ -796,6 +829,7 @@ export default function SessionScreen() {
                     parts={item.parts}
                     isDark={isDark}
                     onLongPress={handleMessageLongPress}
+                    onFork={isCodex ? forkCodex : undefined}
                   />
                   </View>
                 )}
@@ -837,6 +871,7 @@ export default function SessionScreen() {
             </View>
           )}
 
+          {forkingCodex && <View style={s.banner}><ActivityIndicator color="#8b5cf6" /><Text style={{ color: "#8b5cf6" }}>{zh ? "正在创建分支…" : "Creating fork…"}</Text></View>}
           {revertingCodex && <View style={s.banner}><ActivityIndicator color="#8b5cf6" /><Text style={{ color: "#8b5cf6" }}>{zh ? "正在保存备份并回退…" : "Saving backup and rewinding…"}</Text></View>}
           {/* Status */}
           {currentSession && <StatusIndicator sessionID={currentSession.id} isDark={isDark} />}
@@ -977,7 +1012,7 @@ export default function SessionScreen() {
       {isCodex && <CodexSearch visible={showSearch} client={sessionClient} sessionId={currentSession?.id} isDark={isDark} onClose={() => setShowSearch(false)} onSelect={locateMessage} />}
       {isCodex && <CodexFiles visible={showFiles} client={sessionClient} sessionId={currentSession?.id} isDark={isDark} onClose={() => setShowFiles(false)} />}
       {isCodex && <CodexControls visible={showCodex} tab={codexTab} session={currentSession} client={sessionClient}
-        isDark={isDark} busy={isSending} onClose={() => setShowCodex(false)} onSession={updateCodexSession} />}
+        isDark={isDark} busy={isSending} onClose={() => setShowCodex(false)} onSession={updateCodexSession} onFork={() => forkCodex()} forking={forkingCodex} />}
 
       {/* Model picker bottom sheet */}
       <ModelPicker

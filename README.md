@@ -228,3 +228,7 @@ usage and account limits. Open the chart icon in a chat header. See the gateway
 documentation for protocol requirements and supported operations. Version 0.4.19 adds
 full-history search, backup and rewind, grouped file review, batch archive/restore,
 and a global task dashboard with task switching and stop controls.
+
+Version 0.4.20 adds full conversation forks and forks before a selected prompt,
+with inherited settings and editable drafts in the new branch. Conversations
+share the current working directory and files.

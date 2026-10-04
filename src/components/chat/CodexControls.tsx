@@ -14,11 +14,13 @@ interface Props {
   client: Client | null
   isDark: boolean
   busy: boolean
+  onFork: () => void
+  forking: boolean
   onClose: () => void
   onSession: (session: Session) => void
 }
 
-export function CodexControls({ visible, tab: initialTab, session, client, isDark, busy, onClose, onSession }: Props) {
+export function CodexControls({ visible, tab: initialTab, session, client, isDark, busy, onClose, onSession, onFork, forking }: Props) {
   const { i18n } = useTranslation()
   const zh = i18n.language.startsWith("zh")
   const tr = (cn: string, en: string) => zh ? cn : en
@@ -119,6 +121,8 @@ export function CodexControls({ visible, tab: initialTab, session, client, isDar
         {!!error && <Text testID="codex-controls-error" style={s.error}>{error}</Text>}
         <ScrollView contentContainerStyle={s.body}>
           {tab === 'status' && <>
+            <TouchableOpacity testID="codex-fork-current" disabled={locked || busy || forking || control?.compacting || control?.runtimeStatus === 'active'} onPress={onFork} style={[s.button, { opacity: locked || busy || forking || control?.compacting || control?.runtimeStatus === 'active' ? 0.45 : 1 }]}><Text style={s.buttonText}>{forking ? tr('正在创建分支…', 'Creating fork…') : tr('从当前进度创建分支', 'Fork from current progress')}</Text></TouchableOpacity>
+            <Text style={[s.description, { color: muted }]}>{tr('保留原会话，在新分支继续；两个会话共用工作目录和文件。运行中的任务结束后可用。', 'Keep the original conversation and continue in a new branch. Both sessions share the directory and files. Available after the current turn finishes.')}</Text>
             {heading(tr('当前设置', 'Current settings'))}
             {line(tr('模型', 'Model'), control?.model || '—', 'codex-current-model')}
             {line(tr('推理强度', 'Reasoning effort'), control?.effort || tr('模型默认', 'Model default'), 'codex-current-effort')}
