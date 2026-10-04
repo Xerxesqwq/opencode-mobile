@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   useColorScheme,
   ActivityIndicator,
@@ -15,7 +14,9 @@ import { router } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { useTranslation } from "react-i18next"
 import { useConnections } from "../../src/stores/connections"
-import type { ConnectionType } from "../../src/lib/types"
+import { KeyboardForm } from "../../src/components/KeyboardForm"
+import { BackendPicker } from "../../src/components/BackendPicker"
+import type { ServerBackend, ConnectionType } from "../../src/lib/types"
 import { probeConnection, shareReport } from "../../src/lib/diagnostics"
 import { captureDiagnostic } from "../../src/lib/sentry"
 import { parseUrl } from "../../src/lib/diagnostics-classify"
@@ -37,6 +38,7 @@ export default function AddConnectionScreen() {
   const { addConnection, testConnection } = useConnections()
 
   const [mode, setMode] = useState<"quick" | "advanced">("quick")
+  const [backend, setBackend] = useState<ServerBackend>("opencode")
   const [type, setType] = useState<ConnectionType>("local")
   const [name, setName] = useState("")
   const [ip, setIp] = useState("")
@@ -192,6 +194,7 @@ export default function AddConnectionScreen() {
         id: "",
         name: name.trim(),
         type,
+        backend,
         url: url.trim(),
         directory: directory.trim() || undefined,
         username: username.trim() || undefined,
@@ -206,6 +209,7 @@ export default function AddConnectionScreen() {
           {
             name: name.trim(),
             type,
+            backend,
             url: url.trim(),
             directory: directory.trim() || undefined,
             username: username.trim() || undefined,
@@ -315,11 +319,12 @@ export default function AddConnectionScreen() {
   // Quick connect mode - simplified
   if (mode === "quick") {
     return (
-      <ScrollView
+      <KeyboardForm
         style={[styles.container, isDark && styles.containerDark]}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        <BackendPicker value={backend} onChange={(value) => { setBackend(value); if (value === "codex") { setMode("advanced"); setType("tunnel"); setName("Codex"); } }} />
         <View style={styles.quickHeader}>
           <Ionicons name="wifi" size={48} color={isDark ? "#ffffff" : "#0a0a0a"} />
           <Text style={[styles.quickTitle, isDark && styles.textDark]}>{t("connection.add.quick.title")}</Text>
@@ -515,22 +520,23 @@ export default function AddConnectionScreen() {
           </Text>
           <Ionicons name="chevron-forward" size={16} color={isDark ? "#888888" : "#666666"} />
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardForm>
     )
   }
 
   // Advanced mode - full options
   return (
-    <ScrollView
+    <KeyboardForm
       style={[styles.container, isDark && styles.containerDark]}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <TouchableOpacity style={styles.backToQuick} onPress={() => setMode("quick")}>
+      <TouchableOpacity style={styles.backToQuick} onPress={() => { setBackend("opencode"); setMode("quick") }}>
         <Ionicons name="chevron-back" size={16} color={isDark ? "#888888" : "#666666"} />
         <Text style={[styles.backToQuickText, isDark && styles.hintDark]}>{t("connection.add.advanced.backToQuick")}</Text>
       </TouchableOpacity>
 
+      <BackendPicker value={backend} onChange={setBackend} />
       {/* Connection Type */}
       <Text style={[styles.label, isDark && styles.labelDark]}>{t("connection.shared.connectionType")}</Text>
       <View style={styles.typeContainer}>
@@ -576,6 +582,7 @@ export default function AddConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={name}
         onChangeText={setName}
+        testID="connection-name-input"
       />
 
       {/* URL */}
@@ -592,6 +599,7 @@ export default function AddConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={url}
         onChangeText={setUrl}
+        testID="connection-url-input"
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
@@ -614,6 +622,7 @@ export default function AddConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={directory}
         onChangeText={setDirectory}
+        testID="connection-directory-input"
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -625,10 +634,11 @@ export default function AddConnectionScreen() {
       <Text style={[styles.label, isDark && styles.labelDark]}>{t("connection.shared.username")}</Text>
       <TextInput
         style={[styles.input, isDark && styles.inputDark]}
-        placeholder="admin"
+        placeholder={backend === "codex" ? "opencode" : "admin"}
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={username}
         onChangeText={setUsername}
+        testID="connection-username-input"
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -640,6 +650,7 @@ export default function AddConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={password}
         onChangeText={setPassword}
+        testID="connection-password-input"
         secureTextEntry
       />
 
@@ -647,6 +658,7 @@ export default function AddConnectionScreen() {
       <TouchableOpacity
         style={[styles.connectButton, isDark && styles.connectButtonDark, { marginTop: 32 }]}
         onPress={handleAdvancedSave}
+        testID="connection-save-button"
         disabled={isConnecting}
       >
         {isConnecting ? (
@@ -657,7 +669,7 @@ export default function AddConnectionScreen() {
           </Text>
         )}
       </TouchableOpacity>
-    </ScrollView>
+    </KeyboardForm>
   )
 }
 

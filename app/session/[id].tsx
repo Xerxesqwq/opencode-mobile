@@ -118,7 +118,7 @@ export default function SessionScreen() {
   const isSending = useSessions((s) => !!(currentSession && s.sending[currentSession.id]))
 
   const { authenticateForMessage } = useAuth()
-  const { client, clientForDirectory } = useConnections()
+  const { client, clientForDirectory, activeConnection } = useConnections()
 
   // Use directory-aware client for sessions that belong to a project other than the active one
   const sessionClient = useMemo(
@@ -609,20 +609,21 @@ export default function SessionScreen() {
         collapsable={false}
         style={s.container}
         onLayout={() => {
-          // Measure in the same coordinate system as keyboard events. Header
-          // height events can use physical pixels on some Android versions.
-          keyboardContainerRef.current?.measureInWindow((_x, y) => {
-            // React Native Android subtracts the visible window's status-bar
-            // inset from this measurement; keyboard screenY includes it.
-            setKeyboardOffset(y + (Platform.OS === "android" ? insets.top : 0))
-          })
+          // The Android root fills the edge-to-edge window. pageY includes
+          // the native header without measureInWindow's status-bar subtraction.
+          // Safe-area top can include a cutout and is not that subtraction.
+          if (Platform.OS === "android") {
+            keyboardContainerRef.current?.measure((_x, _y, _w, _h, _pageX, pageY) => setKeyboardOffset(pageY))
+          } else {
+            keyboardContainerRef.current?.measureInWindow((_x, y) => setKeyboardOffset(y))
+          }
         }}
       >
         <KeyboardAvoidingView
           style={[s.container, isDark && s.containerDark]}
           // Edge-to-edge Android needs explicit keyboard avoidance. Keyboard
           // events use screen coordinates, but this view starts below the stack
-          // header. Include the measured screen offset (including the status bar), or
+          // header. Include its measured position in the window, or
           // the composer remains covered by that amount when Gboard opens.
           behavior="padding"
           // Android's hide event still carries window coordinates. Calculating
@@ -697,7 +698,7 @@ export default function SessionScreen() {
                     message={item.message}
                     parts={item.parts}
                     isDark={isDark}
-                    onLongPress={handleMessageLongPress}
+                    onLongPress={activeConnection?.backend === "codex" ? undefined : handleMessageLongPress}
                   />
                 )}
                 contentContainerStyle={s.messageList}

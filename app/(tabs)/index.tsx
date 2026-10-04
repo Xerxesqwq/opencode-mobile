@@ -53,7 +53,7 @@ function SessionItem({
   session: Session
   isDark: boolean
   onRename: () => void
-  onDelete: () => void
+  onDelete?: () => void
 }) {
   const { t } = useTranslation()
 
@@ -68,7 +68,7 @@ function SessionItem({
     Alert.alert(session.title || t("sessionsList.untitledSession"), undefined, [
       { text: t("common.cancel"), style: "cancel" },
       { text: t("sessionsList.actions.rename"), onPress: onRename },
-      { text: t("common.delete"), style: "destructive", onPress: onDelete },
+      ...(onDelete ? [{ text: t("common.delete"), style: "destructive" as const, onPress: onDelete }] : []),
     ])
   }
 
@@ -562,7 +562,7 @@ export default function SessionsScreen() {
               session={row.session}
               isDark={isDark}
               onRename={() => handleRename(row.session)}
-              onDelete={() => handleDelete(row.session)}
+              onDelete={activeConnection?.backend === "codex" ? undefined : () => handleDelete(row.session)}
             />
           )
         }

@@ -3,9 +3,11 @@
 ## Change
 
 The chat measures its container position to calculate `keyboardVerticalOffset`.
-On Android, the status bar inset is added because React Native window measurements
-and keyboard screen coordinates use different origins. This keeps the composer
-and send button above Gboard when using edge-to-edge layout.
+On Android, `measure().pageY` uses the edge-to-edge root coordinates shared by
+keyboard events. `measureInWindow()` subtracts the status bar, while safe-area
+insets can also include a taller display cutout. Using the measured root
+position keeps the composer and send button above Gboard without adding the
+cutout height twice. iOS retains its window measurement.
 
 ## Reproduction and results
 
@@ -46,7 +48,7 @@ its controls overlap the keyboard, or if the gap below the controls exceeds 64 d
 The launcher uses a navy background with white/cyan code brackets and a cursor.
 Adaptive icons include a monochrome variant. Source SVG and the generator are
 checked in; run `node scripts/generate-launcher-icons.mjs` to regenerate assets.
-Release metadata is 0.4.16 with versionCode 44 and package `cc.agentlabs.opencode`.
+Release metadata is 0.4.17 with versionCode 45 and package `cc.agentlabs.opencode`.
 
 
 ## Follow-up: restore layout after keyboard dismissal (versionCode 44)
@@ -105,3 +107,16 @@ the separate vision-driven onboarding and coding scenarios were not run.
 
 For another device or IME, run `scripts/check-keyboard-restoration.py` directly
 with `--serial`, `--ime-package`, `--cycles`, `--multiline` and `--send`.
+
+## Codex release: display cutouts and connection forms (versionCode 45)
+
+The Android 15 emulator exposed a 128 px display cutout with a 42 px status
+bar. Adding the safe-area inset to the window measurement left an extra 86 px
+above the keyboard. Chat and connection forms now use the root-relative
+`pageY` measurement. The connection form also scrolls its focused field above
+the keyboard.
+
+The signed release passed five Gboard open/close cycles, a multiline draft,
+and sending with the keyboard open. All open gaps were 24 dp; all closed
+positions returned to baseline with 0 dp extra gap. The result is recorded in
+`docs/verification/codex-direct/keyboard.json`.

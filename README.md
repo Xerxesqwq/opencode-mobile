@@ -215,3 +215,12 @@ Copyright (c) 2026 VIBE TECHNOLOGIES, LLC
 - [sst/opencode](https://github.com/sst/opencode) — the AI coding agent this app connects to (MIT)
 - [Expo](https://expo.dev) — the React Native toolchain powering the app
 - Every contributor who filed a bug, opened a PR, or starred the repo
+
+### Codex over direct HTTPS
+
+Version 0.4.17 adds a **Codex** service choice when adding a connection. Run the
+[Codex gateway](server/codex/README.md) alongside your locally authenticated
+Codex daemon, put it behind HTTPS, and enter its URL and gateway credentials in
+the app. It supports existing and new sessions, streaming, interruptions, models,
+approvals and questions. See the gateway documentation for protocol requirements
+and supported operations.

@@ -169,6 +169,7 @@ export interface Event {
 }
 
 export interface HealthResponse {
+  backend?: "opencode" | "codex"
   healthy: boolean
   version: string
 }

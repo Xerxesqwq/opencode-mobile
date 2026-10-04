@@ -266,7 +266,10 @@ export const useConnections = create<ConnectionsState>((set, get) => ({
         auth: buildAuth(connection.username, password),
       })
 
-      await client.global.health(CONNECTION_TEST_TIMEOUT_MS)
+      const health = await client.global.health(CONNECTION_TEST_TIMEOUT_MS)
+      if ((connection.backend || "opencode") !== (health.backend || "opencode")) {
+        throw new Error("The server type does not match. Select Codex for a Codex gateway, or OpenCode for an OpenCode server.")
+      }
       track(AnalyticsEvent.ConnectionSucceeded, { source })
       return { ok: true }
     } catch (error) {

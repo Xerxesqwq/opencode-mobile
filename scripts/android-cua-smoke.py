@@ -1713,6 +1713,16 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_codex_direct():
+    """Exercise authenticated Codex connections with real Android controls."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-direct")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-direct.py")),
+        "--output-dir", str(output),
+    ], timeout=360, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def run_scenario_keyboard_restoration():
     """Measure real IME cycles in a chat connected to the seeded mock server.
 
@@ -2057,6 +2067,7 @@ Examples:
         # Deterministic feature scenarios (run as functions, not LLM-goal strings)
         deterministic_catalog = {
             "keyboard_restoration": run_scenario_keyboard_restoration,
+            "codex_direct": run_scenario_codex_direct,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(

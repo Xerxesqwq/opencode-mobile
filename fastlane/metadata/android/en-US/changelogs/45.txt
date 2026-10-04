@@ -1,0 +1,2 @@
+v0.4.17
+Connect directly to a Codex gateway over HTTPS. Open existing server sessions, create sessions, stream responses and tools, and answer approval requests. Keeps connection fields above Gboard and includes the chat keyboard restoration fix.
