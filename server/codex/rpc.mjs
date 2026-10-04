@@ -34,7 +34,7 @@ export class CodexRPC extends EventEmitter {
     })
     await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject) })
     const result = await this.call('initialize', {
-      clientInfo: { name: 'opencode_mobile', title: 'OpenCode Mobile', version: '0.2.0' },
+      clientInfo: { name: 'opencode_mobile', title: 'OpenCode Mobile', version: '0.3.0' },
       capabilities: { experimentalApi: true },
     })
     this.send({ method: 'initialized' })

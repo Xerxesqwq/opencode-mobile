@@ -8,7 +8,7 @@ import { SSEParser } from "./sse"
 import { apiErrorFor } from "./api-error"
 import { loadSessionList } from "./session-list"
 import type { FileRoot } from "./file-roots"
-import type { CodexSession, CodexOptions, CodexSettingsPatch, CodexLimits } from "./codex"
+import type { CodexSession, CodexOptions, CodexSettingsPatch, CodexLimits, CodexSearchPage, CodexFileChanges, CodexTaskState } from "./codex"
 
 export { ApiAuthError, isAuthError } from "./api-error"
 
@@ -52,6 +52,7 @@ export interface Session {
 }
 
 export interface Message {
+  codexTurnID?: string
   id: string
   sessionID: string
   role: "user" | "assistant"
@@ -312,6 +313,13 @@ export function createClient(config: ClientConfig) {
     },
 
     codex: {
+      search: (id: string, q: string, kind = "all", offset = 0, signal?: AbortSignal) =>
+        request<CodexSearchPage>(config, `/session/${id}/codex/search?${new URLSearchParams({ q, kind, offset: String(offset) })}`, { signal }),
+      files: (id: string, turn?: string) => request<CodexFileChanges>(config, `/session/${id}/codex/files${turn ? `?turn=${encodeURIComponent(turn)}` : ""}`),
+      revert: (id: string, beforeTurnId: string) => request<{ session: Session; backup: Session; draft: { text: string; images: string[]; omittedAttachments: number } }>(config, `/session/${id}/codex/revert`, { method: "POST", body: JSON.stringify({ beforeTurnId }) }, 90000),
+      library: (archived = false) => request<Session[]>(config, `/codex/library?archived=${archived}`),
+      archive: (ids: string[], archived: boolean) => request<{ results: Array<{ id: string; ok: boolean; error?: string }> }>(config, "/codex/archive", { method: "POST", body: JSON.stringify({ ids, archived }) }, 120000),
+      tasks: () => request<{ items: Array<{ session: Session; state: CodexTaskState; canStop: boolean; error: string | null; statusUnavailable: boolean }>; recentLimit: number; totalSessions: number; updatedAt: number }>(config, "/codex/tasks"),
       options: () => request<CodexOptions>(config, "/codex/options"),
       limits: () => request<CodexLimits>(config, "/codex/limits"),
       update: (id: string, patch: CodexSettingsPatch) => request<Session>(config, `/session/${id}/codex`, {

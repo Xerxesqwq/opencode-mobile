@@ -17,7 +17,7 @@ export function message(thread, turn, item, index = 0) {
   const created = (turn.startedAt ?? thread.createdAt) * 1000 + index
   const completed = turn.status === 'inProgress' ? undefined : (turn.completedAt ?? thread.updatedAt) * 1000
   const id = user ? item.clientId || item.id : item.id
-  const info = { id, sessionID: thread.id, role: user ? 'user' : 'assistant',
+  const info = { id, sessionID: thread.id, codexTurnID: turn.id, role: user ? 'user' : 'assistant',
     time: { created, ...(user ? {} : { completed }) }, providerID: 'codex', modelID: thread.model || undefined,
     ...(turn.error && !user ? { error: { message: turn.error.message } } : {}),
     ...(!user && completed ? { finish: turn.status === 'interrupted' ? 'stop' : 'end_turn' } : {}),

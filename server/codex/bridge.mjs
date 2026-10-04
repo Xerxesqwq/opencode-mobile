@@ -13,11 +13,13 @@ export class Bridge extends EventEmitter {
     this.attaching = new Map()
     this.updates = new Map()
     this.observed = new Map()
+    this.mutations = new Set()
+    this.taskCache = new Map()
     rpc.on('message', data => this.receive(data))
     rpc.on('disconnect', () => {
       this.threads.clear(); this.pending.clear(); this.attaching.clear(); this.observed.clear()
       for (const timer of this.updates.values()) clearTimeout(timer)
-      this.updates.clear()
+      this.updates.clear(); this.taskCache.clear()
       this.emit('disconnect')
     })
   }
@@ -32,15 +34,16 @@ export class Bridge extends EventEmitter {
   event(type, properties) { this.emit('event', { type, properties }) }
   status(id, status) { this.event('session.status', { sessionID: id, status: { type: status === 'active' ? 'busy' : 'idle' } }) }
 
-  async list() {
+  async list(archived = false) {
     const rows = []
     const seen = new Set()
     for (let cursor; ;) {
-      const page = await this.rpc.call('thread/list', { cursor, limit: 100, sortKey: 'updated_at', modelProviders: [] })
+      const page = await this.rpc.call('thread/list', { cursor, limit: 100, sortKey: 'updated_at', modelProviders: [], ...(archived ? { archived: true } : {}) })
       rows.push(...page.data)
       if (!page.nextCursor || seen.has(page.nextCursor)) break
       seen.add(page.nextCursor); cursor = page.nextCursor
     }
+    if (archived) return [...new Map(rows.map(thread => [thread.id, thread])).values()]
     // Empty threads are loaded in the daemon before a rollout is persisted.
     // Include them so a newly created session survives refreshing the list.
     const byId = new Map(rows.map(thread => [thread.id, thread]))
@@ -139,6 +142,7 @@ export class Bridge extends EventEmitter {
   }
 
   async updateSettings(id, body) {
+    if (this.mutations.has(id)) throw Object.assign(new Error('A session change is in progress'), { status: 409 })
     const state = await this.attach(id)
     const params = await settingsPatch(this.rpc, state, body)
     // The native notification contains the effective settings. A brand-new
@@ -164,6 +168,7 @@ export class Bridge extends EventEmitter {
   }
 
   async compact(id) {
+    if (this.mutations.has(id)) throw Object.assign(new Error('A session change is in progress'), { status: 409 })
     const state = await this.attach(id)
     if (state.compacting || state.thread.status.type === 'active' || [...state.turns.values()].some(turn => turn.status === 'inProgress')) {
       throw Object.assign(new Error('Wait for the current turn to finish before compacting'), { status: 409 })
@@ -176,6 +181,7 @@ export class Bridge extends EventEmitter {
   }
 
   async prompt(id, body) {
+    if (this.mutations.has(id)) throw Object.assign(new Error('A session change is in progress'), { status: 409 })
     const content = input(body.parts)
     const state = await this.attach(id)
     if (state.thread.canAcceptDirectInput === false) throw Object.assign(new Error('This thread does not accept direct input'), { status: 409 })
@@ -228,10 +234,16 @@ export class Bridge extends EventEmitter {
       return
     }
     if (method === 'thread/started') { this.event('session.created', { info: session(p.thread) }); return }
+    if (['thread/archived', 'thread/unarchived'].includes(method)) {
+      this.threads.delete(p.threadId); this.observed.delete(p.threadId)
+      if (!this.mutations.has(p.threadId)) this.event('codex.library.changed', { sessionID: p.threadId, archived: method === 'thread/archived' })
+      return
+    }
     if (['thread/closed', 'thread/deleted', 'thread/reverted'].includes(method)) {
       this.threads.delete(p.threadId)
       this.observed.delete(p.threadId)
       this.status(p.threadId, 'idle')
+      if (method === 'thread/reverted') this.event('codex.history.changed', { sessionID: p.threadId })
       return
     }
     const state = this.threads.get(p.threadId)

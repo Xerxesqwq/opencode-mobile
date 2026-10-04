@@ -39,6 +39,9 @@ import { useEvents, refreshPending } from "../../src/stores/events"
 import { useConnections } from "../../src/stores/connections"
 import { useAuth } from "../../src/stores/auth"
 import { useCatalog } from "../../src/stores/catalog"
+import { CodexSearch } from "../../src/components/chat/CodexSearch"
+import { CodexFiles } from "../../src/components/chat/CodexFiles"
+import type { CodexSearchResult } from "../../src/lib/codex"
 import { CodexControls, type CodexTab } from "../../src/components/chat/CodexControls"
 import { codexError } from "../../src/lib/codex"
 import type { Session } from "../../src/lib/sdk"
@@ -99,7 +102,8 @@ export default function SessionScreen() {
       hide.remove()
     }
   }, [])
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const zh = i18n.language.startsWith("zh")
 
   const flatListRef = useRef<FlatList>(null)
   const modelSheetRef = useRef<BottomSheet>(null)
@@ -107,6 +111,13 @@ export default function SessionScreen() {
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [showInfo, setShowInfo] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)
+  const [searchJump, setSearchJump] = useState(0)
+  const [targetMessage, setTargetMessage] = useState<string | null>(null)
+  const [revertingCodex, setRevertingCodex] = useState(false)
+  const revertingRef = useRef(false)
+  const jumpRetries = useRef(0)
 
   const {
     currentSession,
@@ -222,10 +233,30 @@ export default function SessionScreen() {
     [messages, parts, revertMessageID],
   )
 
+  const locateMessage = useCallback(async (result: CodexSearchResult) => {
+    setShowSearch(false)
+    if (!useSessions.getState().messages.some(message => message.id === result.messageId)) await loadOlderMessages()
+    if (!useSessions.getState().messages.some(message => message.id === result.messageId)) {
+      Alert.alert(zh ? "消息已改变" : "Message changed", zh ? "请刷新搜索结果后重试。" : "Refresh search results and try again.")
+      return
+    }
+    jumpRetries.current = 0; setTargetMessage(result.messageId); setSearchJump(value => value + 1)
+  }, [loadOlderMessages, zh])
+  useEffect(() => {
+    if (!targetMessage) return
+    const index = messageData.findIndex(row => row.message.id === targetMessage)
+    if (index >= 0) {
+      const timer = setTimeout(() => flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 250)
+      return () => clearTimeout(timer)
+    }
+  }, [targetMessage, messageData.length, searchJump])
+
   // Tracks the latest composer text without pulling `input` into
   // handleMessageLongPress's deps — kept as a plain ref assignment (not
   // state) so the callback below stays referentially stable across
   // keystrokes for MessageBubble's custom memo comparator.
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
   const inputRef = useRef(input)
   inputRef.current = input
 
@@ -254,6 +285,32 @@ export default function SessionScreen() {
   // closing over props) so MessageBubble's custom memo comparator can bail
   // safely without risking a stale handler.
   const handleMessageLongPress = useCallback((messageID: string) => {
+    if (isCodex) {
+      const message = useSessions.getState().messages.find(message => message.id === messageID)
+      const current = useSessions.getState().currentSession
+      if (!message?.codexTurnID || !current || !sessionClient || revertingRef.current) return
+      Alert.alert(zh ? "回退并编辑这轮提问？" : "Rewind and edit this prompt?",
+        (zh ? "会先保存完整备份，再移除这一轮及之后的对话。文件保持当前状态。原提问会放入输入框供你编辑。" : "A full backup will be saved before removing this turn and later conversation. Files keep their current state. The original prompt will be placed in the composer.") + ((inputRef.current.trim() || attachmentsRef.current.length) ? (zh ? "\n输入框中的未发送草稿将被替换。" : "\nYour unsent draft will be replaced.") : ""), [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: zh ? "备份并回退" : "Back up & rewind", style: "destructive", onPress: async () => {
+          if (revertingRef.current) return
+          revertingRef.current = true; setRevertingCodex(true)
+          try {
+            const result = await sessionClient.codex.revert(current.id, message.codexTurnID!)
+            await selectSession(current.id, current.directory)
+            setTargetMessage(null); setInput(result.draft.text)
+            setAttachments(result.draft.images.map(uri => ({ uri, mime: uri.slice(5, uri.indexOf(";")), filename: "image" })))
+            const details = `${zh ? "备份：" : "Backup: "}${result.backup.title}${result.draft.omittedAttachments ? (zh ? "\n请重新添加原提问中的文件附件。" : "\nReattach the original file attachments before retrying.") : ""}`
+            Alert.alert(zh ? "已回退，可以编辑后重试" : "Rewound. Edit the prompt to retry", details, [
+              { text: zh ? "继续编辑" : "Edit prompt" },
+              { text: zh ? "打开备份" : "Open backup", onPress: () => router.push({ pathname: "/session/[id]", params: { id: result.backup.id, directory: result.backup.directory } }) },
+            ])
+          } catch (error) { Alert.alert("Codex", codexError(error)) }
+          finally { revertingRef.current = false; setRevertingCodex(false) }
+        } },
+      ])
+      return
+    }
     Alert.alert(t("session.alerts.messageActionsTitle"), undefined, [
       { text: t("common.cancel"), style: "cancel" },
       {
@@ -281,7 +338,7 @@ export default function SessionScreen() {
         },
       },
     ])
-  }, [applyRevertResult, t])
+  }, [applyRevertResult, t, isCodex, sessionClient, zh, selectSession, router])
 
   const scrollToBottom = useCallback((animated = true) => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated })
@@ -452,7 +509,7 @@ export default function SessionScreen() {
 
   // --- Send ---
   const handleSend = async () => {
-    if (!input.trim() && attachments.length === 0) return
+    if (revertingRef.current || (!input.trim() && attachments.length === 0)) return
     const builtin = attachments.length === 0 && isCodex ? allCommands.find(command => command.type === "builtin" && input.trim() === `/${command.trigger}`) : undefined
     if (builtin) { handleSlashSelect(builtin); return }
     const authenticated = await authenticateForMessage()
@@ -623,6 +680,8 @@ export default function SessionScreen() {
           title: currentSession?.title || t("session.titleFallback"),
           headerRight: () => (
             <View style={s.headerRight}>
+              {isCodex && <TouchableOpacity testID="codex-search-button" onPress={() => { Keyboard.dismiss(); setShowSearch(true) }} hitSlop={8}><Ionicons name="search-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
+              {isCodex && <TouchableOpacity testID="codex-files-button" onPress={() => { Keyboard.dismiss(); setShowFiles(true) }} hitSlop={8}><Ionicons name="git-compare-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
               {shortDir && (
                 <View style={[s.dirBadge, isDark && s.dirBadgeDark]}>
                   <Ionicons name="folder-outline" size={14} color={isDark ? "#888888" : "#666666"} />
@@ -731,14 +790,21 @@ export default function SessionScreen() {
                 inverted
                 keyExtractor={(item) => item.message.id}
                 renderItem={({ item }) => (
+                  <View testID={targetMessage === item.message.id ? "codex-search-target" : undefined} style={targetMessage === item.message.id ? { borderWidth: 2, borderColor: "#8b5cf6", borderRadius: 12 } : undefined}>
                   <MessageBubble
                     message={item.message}
                     parts={item.parts}
                     isDark={isDark}
-                    onLongPress={activeConnection?.backend === "codex" ? undefined : handleMessageLongPress}
+                    onLongPress={handleMessageLongPress}
                   />
+                  </View>
                 )}
                 contentContainerStyle={s.messageList}
+                onScrollToIndexFailed={({ index, averageItemLength }) => {
+                  if (!targetMessage || jumpRetries.current++ > 12) return
+                  flatListRef.current?.scrollToOffset({ offset: Math.max(0, averageItemLength * index), animated: false })
+                  setTimeout(() => flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 300)
+                }}
                 onScroll={handleScroll}
                 scrollEventThrottle={100}
                 onEndReached={handleLoadMore}
@@ -771,6 +837,7 @@ export default function SessionScreen() {
             </View>
           )}
 
+          {revertingCodex && <View style={s.banner}><ActivityIndicator color="#8b5cf6" /><Text style={{ color: "#8b5cf6" }}>{zh ? "正在保存备份并回退…" : "Saving backup and rewinding…"}</Text></View>}
           {/* Status */}
           {currentSession && <StatusIndicator sessionID={currentSession.id} isDark={isDark} />}
 
@@ -907,6 +974,8 @@ export default function SessionScreen() {
         </KeyboardAvoidingView>
       </View>
 
+      {isCodex && <CodexSearch visible={showSearch} client={sessionClient} sessionId={currentSession?.id} isDark={isDark} onClose={() => setShowSearch(false)} onSelect={locateMessage} />}
+      {isCodex && <CodexFiles visible={showFiles} client={sessionClient} sessionId={currentSession?.id} isDark={isDark} onClose={() => setShowFiles(false)} />}
       {isCodex && <CodexControls visible={showCodex} tab={codexTab} session={currentSession} client={sessionClient}
         isDark={isDark} busy={isSending} onClose={() => setShowCodex(false)} onSession={updateCodexSession} />}
 

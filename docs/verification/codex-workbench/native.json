@@ -1,0 +1,22 @@
+{
+  "source": "01a105f5-c76c-76b2-a557-ea9be9fe16dd",
+  "backup": "01a105f6-120b-7180-a633-1af8adea8876",
+  "runner": "01a105f6-2fc7-7b33-ae08-b8ea1bcc0424",
+  "title": "Workbench 1791101355865",
+  "cwd": "/home/xerxes/droid/codex-workbench-fixture/events",
+  "firstTurn": "01a105f5-c986-7ae3-87c1-58f9da7efb8e",
+  "files": [
+    "/home/xerxes/droid/codex-workbench-fixture/events/a.py",
+    "/home/xerxes/droid/codex-workbench-fixture/events/b.py"
+  ],
+  "checks": [
+    "native full-history search",
+    "two grouped file patches",
+    "backup before revert",
+    "files unchanged",
+    "retry",
+    "batch archive and restore",
+    "global running task and stop"
+  ],
+  "passed": true
+}

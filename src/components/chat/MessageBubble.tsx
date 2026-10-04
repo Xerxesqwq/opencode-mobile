@@ -58,6 +58,7 @@ export const MessageBubble = memo(
           <Text style={[s.role, isUser && s.roleUser, isDark && s.textWhite]}>{isUser ? "You" : "Assistant"}</Text>
           {message.model && <Text style={[s.modelTag, isDark && s.modelTagDark]}>{message.model.modelID}</Text>}
           {!isUser && message.modelID && <Text style={[s.modelTag, isDark && s.modelTagDark]}>{message.modelID}</Text>}
+          {isUser && message.codexTurnID && onLongPress && <TouchableOpacity testID={`codex-rewind-${message.id}`} accessibilityLabel="Rewind and edit prompt" onPress={() => onLongPress(message.id)} hitSlop={8} style={{ marginLeft: "auto", padding: 4 }}><Ionicons name="play-back-outline" size={17} color="#8b5cf6" /></TouchableOpacity>}
         </View>
 
         {/* Image attachments */}

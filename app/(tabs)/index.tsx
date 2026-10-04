@@ -19,6 +19,7 @@ import {
 import { router, useFocusEffect } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { useTranslation } from "react-i18next"
+import { CodexWorkspace } from "../../src/components/chat/CodexWorkspace"
 import { useSessions } from "../../src/stores/sessions"
 import { useConnections } from "../../src/stores/connections"
 import { useEvents } from "../../src/stores/events"
@@ -158,9 +159,10 @@ function getShortPath(
 }
 
 export default function SessionsScreen() {
+  const [workspace, setWorkspace] = useState<"tasks" | "sessions" | null>(null)
   const colorScheme = useColorScheme()
   const isDark = colorScheme === "dark"
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [showNewSession, setShowNewSession] = useState(false)
   const [customDir, setCustomDir] = useState("")
   const [isCreating, setIsCreating] = useState(false)
@@ -550,6 +552,12 @@ export default function SessionsScreen() {
       )}
 
       <UpdateBanner isDark={isDark} />
+      {activeConnection.backend === "codex" && <View style={{ flexDirection: "row", padding: 8, gap: 8 }}>
+        <TouchableOpacity testID="codex-tasks-button" onPress={() => setWorkspace("tasks")} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: isDark ? "#252525" : "#f2f3f5" }}><Text style={{ color: "#8b5cf6", textAlign: "center", fontWeight: "600" }}>{i18n.language.startsWith("zh") ? "任务面板" : "Task dashboard"}</Text></TouchableOpacity>
+        <TouchableOpacity testID="codex-manage-button" onPress={() => setWorkspace("sessions")} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: isDark ? "#252525" : "#f2f3f5" }}><Text style={{ color: "#8b5cf6", textAlign: "center", fontWeight: "600" }}>{i18n.language.startsWith("zh") ? "整理与归档" : "Manage & archive"}</Text></TouchableOpacity>
+      </View>}
+      {activeConnection.backend === "codex" && <CodexWorkspace visible={workspace !== null} initialTab={workspace || "tasks"} client={client} isDark={isDark} onClose={() => setWorkspace(null)} onChanged={loadSessions}
+        onOpen={session => { setWorkspace(null); router.push({ pathname: "/session/[id]", params: { id: session.id, directory: session.directory } }) }} /> }
 
       <FlatList
         data={rows}

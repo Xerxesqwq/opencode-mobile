@@ -69,3 +69,21 @@ export function codexError(error: unknown): string {
   }
   return text
 }
+
+export interface CodexSearchResult {
+  messageId: string
+  turnId: string
+  kind: "user" | "assistant" | "tool"
+  snippet: string
+}
+export interface CodexSearchPage {
+  results: CodexSearchResult[]
+  total: number
+  nextOffset: number | null
+}
+export interface CodexFileChanges {
+  turnId: string | null
+  turns: Array<{ id: string; startedAt?: number; status: string }>
+  files: Array<{ path: string; kind: string; diff: string; status: string }>
+}
+export type CodexTaskState = "running" | "approval" | "input" | "failed" | "completed" | "interrupted" | "idle"

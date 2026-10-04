@@ -1,3 +1,4 @@
+import { searchHistory, fileChanges, revertHistory, archiveSessions, taskOverview } from './workbench.mjs'
 import { controlOptions, modelCatalog } from './controls.mjs'
 import http from 'node:http'
 import https from 'node:https'
@@ -67,7 +68,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
   }
   async function dispatch(method, url, route, req, cwd, init) {
     if (method === 'GET') {
-      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.2.0', backend: 'codex', codex: init.userAgent }
+      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.3.0', backend: 'codex', codex: init.userAgent }
       if (url.pathname === '/path') return { home: homedir(), state: init.codexHome, config: init.codexHome, worktree: cwd, directory: cwd }
       if (url.pathname === '/project/current') return project(cwd)
       if (url.pathname === '/project') return [...new Set((await bridge.list()).map(t => t.cwd))].map(project)
@@ -79,6 +80,8 @@ export function createGateway({ bridge, password, username = 'opencode', directo
       if (url.pathname === '/session' || url.pathname === '/experimental/session') return (await bridge.list()).map(thread => bridge.describe(thread))
       if (url.pathname === '/permission' || url.pathname === '/question') return [...bridge.pending.values()].filter(row => row.question === (url.pathname === '/question')).map(row => row.value)
       if (url.pathname === '/agent') return [{ name: 'codex', description: 'Codex on your server', mode: 'primary', native: true, options: {} }]
+      if (url.pathname === '/codex/tasks') return taskOverview(bridge)
+      if (url.pathname === '/codex/library') return (await bridge.list(url.searchParams.get('archived') === 'true')).map(thread => bridge.describe(thread))
       if (url.pathname === '/codex/options') return controlOptions(bridge.rpc, cwd)
       if (url.pathname === '/codex/limits') {
         const result = await bridge.rpc.call('account/rateLimits/read', {})
@@ -92,12 +95,17 @@ export function createGateway({ bridge, password, username = 'opencode', directo
         return { all: [{ id: 'codex', name: 'Codex', models }], default: {}, connected: ['codex'] }
       }
       if (route[0] === 'session' && route.length >= 2) {
+        if (route[2] === 'codex' && route[3] === 'search') return searchHistory(bridge, route[1], url.searchParams.get('q') || '', url.searchParams.get('kind') || 'all', url.searchParams.get('offset'))
+        if (route[2] === 'codex' && route[3] === 'files') return fileChanges(bridge, route[1], url.searchParams.get('turn'))
         const state = await bridge.attach(route[1])
         if (route.length === 2) return bridge.describe(state.thread)
         if (route[2] === 'message') return bridge.history(route[1], url.searchParams.has('limit') ? Math.max(1, Math.min(1000, Number(url.searchParams.get('limit')) || 50)) : undefined)
         if (route[2] === 'codex' && route[3] === 'diff') return { diff: await bridge.diff(route[1]) }
         if (route[2] === 'diff') throw failure(501, 'Structured file diffs are not available for Codex; view the file-change tool output')
       }
+    }
+    if (method === 'POST' && url.pathname === '/codex/archive') {
+      const body = await json(req); return archiveSessions(bridge, body.ids, body.archived)
     }
     if (method === 'POST' && url.pathname === '/session') {
       if (!(await stat(cwd)).isDirectory()) throw failure(400, 'Working directory must exist')
@@ -106,6 +114,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
     }
     if (route[0] === 'session' && route.length >= 2) {
       const id = route[1]
+      if (method === 'POST' && route[2] === 'codex' && route[3] === 'revert') return revertHistory(bridge, id, (await json(req)).beforeTurnId)
       if (method === 'PATCH' && route[2] === 'codex') return bridge.updateSettings(id, await json(req))
       if (method === 'POST' && route[2] === 'compact') return bridge.compact(id)
       if (method === 'PATCH' && route.length === 2) {

@@ -225,4 +225,6 @@ the app. It supports existing and new sessions, streaming, interruptions, models
 approvals and questions. Version 0.4.18 adds session controls for context compaction,
 reasoning effort, permission profiles, approval policy, plan/default mode, context
 usage and account limits. Open the chart icon in a chat header. See the gateway
-documentation for protocol requirements and supported operations.
+documentation for protocol requirements and supported operations. Version 0.4.19 adds
+full-history search, backup and rewind, grouped file review, batch archive/restore,
+and a global task dashboard with task switching and stop controls.

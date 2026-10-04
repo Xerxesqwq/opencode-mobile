@@ -14,6 +14,11 @@ Tested protocol: Codex CLI/app-server **0.160.0**. The experimental paginated hi
 - Change sandbox permission profiles, approval policy, and plan/default mode; reflect effective settings confirmed by Codex.
 - Compact context after the active turn finishes, inspect context and cumulative token usage, and view account usage windows.
 - Inspect live task plans, loaded instruction paths, and the latest turn's file diff.
+- Search all stored conversation turns, with prompt/reply/tool filters and message links.
+- Rewind from a user prompt after saving a complete backup, then edit and retry. File contents remain unchanged.
+- Review recorded file patches by turn and path, with line numbers, syntax colors, and collapsible context.
+- Archive and restore up to 100 selected sessions, with per-session failure reporting.
+- Monitor all loaded tasks and 100 recent sessions, including approval/input waits and failures; jump to or stop a running task.
 - Send text and embedded images.
 - Answer command/file/permission approvals and structured questions. Pending requests stay on the server while the phone disconnects. Requests resolved on another client disappear here too.
 
@@ -21,7 +26,7 @@ Existing threads retain their permissions, model and reasoning effort until the 
 
 Live takeover applies to threads loaded in the daemon addressed by `CODEX_SOCKET`. A separate standalone CLI process can have its own runtime; a stored rollout alone does not give this gateway control of that process.
 
-Dynamic tools and authentication/attestation requests owned by another Codex client still require that client. The gateway reports these requests and leaves their handling with the owner. Revert, deletion, archiving, OpenCode slash commands and structured file-diff endpoints are unavailable; the app hides edit/delete actions for Codex connections. File changes remain visible as tool output and through the Codex diff view.
+Dynamic tools and authentication/attestation requests owned by another Codex client still require that client. The gateway reports these requests and leaves their handling with the owner. Deletion and OpenCode-specific slash commands remain unavailable. Rewind changes conversation history and saves a named backup first; local files keep their current contents. Rewinding or archiving an active task requires stopping it first. Recorded patches describe historical edits and can differ from the current working tree.
 
 ## Start
 
@@ -79,7 +84,7 @@ Forward the router's external port to this Caddy listener and permit it in the h
 
 ## Android
 
-Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/model` and `/new` run locally or open the matching controls.
+Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Use the search and file icons in the chat header for history search and file review. Tap the rewind button on a user message, or long-press its header, to back up and rewind from that prompt. The session screen opens the task dashboard and session organizer. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/model` and `/new` run locally or open the matching controls.
 
 Context uses the native `last.totalTokens` and `modelContextWindow`; cached input and reasoning output are subsets, not additional tokens. Codex 0.160 metadata-only resume omits usage replay for loaded threads. The gateway restores the latest token-count record from at most the last 8 MiB of the daemon-provided rollout, restricted to the daemon's state directory. It returns only token counts; live notifications supersede the restored snapshot. If no snapshot is available, the panel waits for the next native usage event.
 
@@ -95,6 +100,7 @@ Tests exercise protocol framing through a real Unix WebSocket, REST/SSE authenti
 Opt-in live checks create dedicated test threads:
 
 ```sh
+CODEX_WORKBENCH_FIXTURE=/absolute/path/to/dedicated-test-directory node workbench-live-check.mjs
 node live-controls-check.mjs
 CODEX_GATEWAY_URL=https://your-host:port \
 CODEX_GATEWAY_USERNAME=opencode \
