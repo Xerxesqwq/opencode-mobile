@@ -245,3 +245,7 @@ Version 0.4.23 binds each chat screen to its selected conversation. Delayed
 refreshes and history pages from another conversation are discarded. Failed
 loads show a retry action, and the composer stays disabled until the selected
 conversation is ready.
+
+Version 0.4.24 fixes the Android crash when `/new` switches away from a long
+conversation. `/new` and `/clear` start a fresh conversation in the current
+project and preserve previous conversations. Failed creation shows an error.

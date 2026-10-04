@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "checks": [
+    "creation failure keeps original",
+    "new from busy long conversation",
+    "clear appears in suggestions",
+    "repeated new and clear",
+    "directory preserved",
+    "original history preserved"
+  ],
+  "creations": 4,
+  "inferenceRequests": 0
+}

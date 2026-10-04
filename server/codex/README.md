@@ -152,3 +152,7 @@ and compact tool metadata. App 0.4.22 supports preview, zoom, pan and retry.
 Read-only native verification: set `CODEX_MEDIA_SESSION` and
 `CODEX_MEDIA_REPORT`, then run `node media-live-check.mjs`. This check starts
 no turns and changes no session settings.
+
+Gateway 0.6.1 opens newly created conversations before their first prompt and
+reattaches loaded empty conversations after a gateway reconnect. Native history
+errors other than the explicit pre-first-message condition still surface.

@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "model": "gpt-6-luna",
+  "inferenceRequests": 1,
+  "checks": [
+    "empty history after creation",
+    "empty history after native reconnect",
+    "same identity",
+    "Luna first message",
+    "persisted history"
+  ]
+}

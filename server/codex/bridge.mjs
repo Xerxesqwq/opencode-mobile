@@ -77,16 +77,25 @@ export class Bridge extends EventEmitter {
 
   async hydrate(id) {
     // No permission/model overrides: preserve the live session's settings.
-    const result = await this.rpc.call('thread/resume', { threadId: id, excludeTurns: true })
+    let result, unmaterialized = false
+    try { result = await this.rpc.call('thread/resume', { threadId: id, excludeTurns: true }) }
+    catch (error) {
+      if (error.code !== -32600 || !error.message.startsWith('no rollout found for thread id ')) throw error
+      // Empty threads can still be loaded in the daemon after this gateway
+      // reconnects. Read their metadata without changing any native settings.
+      result = await this.rpc.call('thread/read', { threadId: id, includeTurns: false })
+      unmaterialized = true
+    }
     const thread = result.thread
     // Register before fetching history so live events are retained during hydration.
     const observed = this.observed.get(id) || {}
     const settings = { ...settingsFromResume(result), ...observed.settings }
     thread.model = settings.model; thread.reasoningEffort = settings.effort
-    const state = { thread, turns: new Map(), diffs: '', live: new Map(), ...observed, settings }
+    const state = { thread, turns: new Map(), diffs: '', live: new Map(), ...observed, settings, needsResume: unmaterialized }
     this.threads.set(id, state)
     try {
       const page = await turnPage(this.rpc, { threadId: id, limit: 1, sortDirection: 'desc' })
+      if (unmaterialized && !page.unmaterialized) throw new Error('Could not resume the existing conversation')
       const live = state.turns
       state.turns = new Map(page.data.reverse().map(turn => [turn.id, turn]))
       for (const [turnId, turn] of live) {
@@ -202,6 +211,23 @@ export class Bridge extends EventEmitter {
     const result = active
       ? await this.rpc.call('turn/steer', { threadId: id, expectedTurnId: active.id, input: content, clientUserMessageId })
       : await this.rpc.call('turn/start', params)
+    if (state.needsResume) {
+      // The first input persists the rollout. Resume now to restore the native
+      // subscription and effective settings after reopening an empty thread.
+      let resumed
+      for (const delay of [0, 250, 1000]) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+        try { resumed = await this.rpc.call('thread/resume', { threadId: id, excludeTurns: true }); break }
+        catch (error) {
+          if (delay === 1000 || !/no rollout found|rollout at .* is empty/.test(error.message)) throw error
+        }
+      }
+      state.thread = resumed.thread
+      state.settings = settingsFromResume(resumed)
+      state.needsResume = false
+      this.changed(state)
+      this.status(id, state.thread.status.type)
+    }
     if (active) {
       const item = { id: clientUserMessageId, clientId: clientUserMessageId, type: 'userMessage', content }
       active.items.push(item); this.emitItem(state, active, item)

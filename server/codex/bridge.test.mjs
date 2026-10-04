@@ -149,3 +149,40 @@ test('lists empty loaded sessions alongside persisted history without duplicates
     { method: 'thread/read', params: { threadId: 'new', includeTurns: false } },
   ])
 })
+
+const emptyHistoryError = () => Object.assign(new Error('thread new is not materialized yet; thread/turns/list is unavailable before first user message'), { code: -32600 })
+
+test('a newly created native session has empty history before its first prompt', async () => {
+  const { rpc, bridge } = fixture(), original = rpc.call.bind(rpc)
+  rpc.call = (method, params) => method === 'thread/turns/list' ? Promise.reject(emptyHistoryError()) : original(method, params)
+  await bridge.create('/workspace')
+  assert.deepEqual(await bridge.history('new'), [])
+})
+
+test('an empty native session reopens after reconnect without creating a replacement or changing settings', async () => {
+  const { rpc, bridge } = fixture(), original = rpc.call.bind(rpc)
+  let started = false, resumeAttempts = 0
+  rpc.call = async (method, params) => {
+    if (method === 'turn/start') started = true
+    if (method === 'thread/resume' && started) { rpc.calls.push({ method, params }); if (++resumeAttempts === 1) throw Object.assign(new Error('rollout at /fixture/new.jsonl is empty'), { code: -32603 }); return { thread: { ...thread(), id: 'new' }, model: 'test-model' } }
+    if (method === 'thread/resume') throw Object.assign(new Error('no rollout found for thread id new'), { code: -32600 })
+    if (method === 'thread/turns/list') throw emptyHistoryError()
+    return original(method, params)
+  }
+  assert.deepEqual(await bridge.history('new'), [])
+  assert.equal(bridge.describe(bridge.threads.get('new').thread).id, 'new')
+  assert.equal(rpc.calls.some(call => ['thread/start', 'thread/settings/update', 'turn/start'].includes(call.method)), false)
+  await bridge.prompt('new', { parts: [{ type: 'text', text: 'First message' }] })
+  assert.equal(rpc.calls.filter(call => call.method === 'turn/start').length, 1)
+  assert.equal(resumeAttempts, 2)
+  assert.equal(rpc.calls.at(-1).method, 'thread/resume')
+  assert.equal(rpc.calls.at(-1).params.threadId, 'new')
+  assert.equal(bridge.threads.get('new').needsResume, false)
+})
+
+test('other native history failures still surface instead of showing an empty conversation', async () => {
+  const { rpc, bridge } = fixture(), original = rpc.call.bind(rpc)
+  rpc.call = (method, params) => method === 'thread/turns/list' ? Promise.reject(Object.assign(new Error('History unavailable'), { code: -32600 })) : original(method, params)
+  await bridge.create('/workspace')
+  await assert.rejects(bridge.history('new'), /History unavailable/)
+})

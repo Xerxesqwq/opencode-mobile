@@ -123,6 +123,7 @@ export default function SessionScreen() {
   const [targetMessage, setTargetMessage] = useState<string | null>(null)
   const [forkingCodex, setForkingCodex] = useState(false)
   const forkingRef = useRef(false)
+  const creatingRef = useRef(false)
   const [revertingCodex, setRevertingCodex] = useState(false)
   const revertingRef = useRef(false)
   const jumpRetries = useRef(0)
@@ -235,7 +236,10 @@ export default function SessionScreen() {
       icon: "code-slash-outline",
       type: "custom",
     }))
-    return isCodex ? [...BUILTIN_COMMANDS.filter(command => command.trigger !== "agent"), ...CODEX_COMMANDS] : [...custom, ...BUILTIN_COMMANDS]
+    return isCodex ? [...BUILTIN_COMMANDS.filter(command => command.trigger !== "agent"), {
+      trigger: "clear", title: "Clear context", description: "Start fresh in this directory; keep the previous conversation",
+      icon: "refresh-outline", type: "builtin",
+    }, ...CODEX_COMMANDS] : [...custom, ...BUILTIN_COMMANDS]
   }, [serverCommands, isCodex])
 
   // While a revert is pending, the reverted message and everything after it
@@ -456,11 +460,18 @@ export default function SessionScreen() {
         }
         switch (cmd.trigger) {
           case "new":
+          case "clear":
             if (!isCodex) { router.back(); return }
+            if (creatingRef.current || !sessionClient) return
+            creatingRef.current = true
+            Keyboard.dismiss()
             setInput("")
-            void useSessions.getState().createSession().then(session => {
-              if (session) router.replace({ pathname: "/session/[id]", params: { id: session.id, directory: session.directory } })
+            // Keep the outgoing screen's store intact until the new route owns it.
+            // Use its directory-scoped client so /new stays in the same project.
+            void sessionClient.session.create({}).then(session => {
+              if (ownsSession()) router.replace({ pathname: "/session/[id]", params: { id: session.id, directory: session.directory } })
             }).catch(error => Alert.alert("Session", codexError(error)))
+              .finally(() => { creatingRef.current = false })
             return
           case "model":
             setInput("")
@@ -858,6 +869,9 @@ export default function SessionScreen() {
             <View testID={`chat-content-${currentSession?.id || "empty"}`} style={s.listWrap}>
               <FlatList
                 ref={flatListRef}
+                // Fabric can reattach a clipped child while this inverted list
+                // is being removed during a session switch, crashing Android.
+                removeClippedSubviews={false}
                 data={messageData}
                 inverted
                 keyExtractor={(item) => item.message.id}

@@ -15,6 +15,7 @@ const messages = new Map(ids.map((id, index) => [id, [{
   parts: [{ id: 'part-' + id, sessionID: id, messageID: 'message-' + id, type: 'text', text: index ? 'NAV_B_ONLY' : 'NAV_A_ONLY' }],
 }]]))
 const held = new Set(), pending = new Map(), streams = new Set(), requests = [], writes = []
+let createFailure = false, createDelay = 0, creations = 0
 const json = (res, status, value) => { if (!res.destroyed) { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)) } }
 const event = (type, properties) => {
   const frame = 'data: ' + JSON.stringify({ directory: '/navigation', payload: { type, properties } }) + '\n\n'
@@ -29,6 +30,11 @@ const server = http.createServer(async (req, res) => {
     try { body = JSON.parse(Buffer.concat(chunks).toString() || '{}') } catch { return json(res, 400, {}) }
   }
   if (route.startsWith('/__control')) {
+    if (route === '/__control/create') { createFailure = !!body.fail; createDelay = body.delay || 0 }
+    if (route === '/__control/long') messages.set(body.id, Array.from({ length: 60 }, (_, index) => {
+      const messageID = 'long-' + index
+      return { info: { id: messageID, sessionID: body.id, role: 'assistant', time: { created: index }, modelID: 'gpt-6-luna' }, parts: [{ id: messageID + '-text', messageID, sessionID: body.id, type: 'text', text: '## Reply ' + index + '\n\n' + 'A long conversation for Android view recycling.\n\n'.repeat(8) }] }
+    }))
     if (route === '/__control/hold') held.add(body.id)
     if (route === '/__control/release') {
       held.delete(body.id)
@@ -39,7 +45,7 @@ const server = http.createServer(async (req, res) => {
       event(body.type, body.properties)
       if (body.close) for (const stream of streams) stream.end()
     }
-    return json(res, 200, { held: [...held], pending: Object.fromEntries([...pending].map(([id, values]) => [id, values.length])), requests, writes })
+    return json(res, 200, { held: [...held], pending: Object.fromEntries([...pending].map(([id, values]) => [id, values.length])), requests, writes, creations })
   }
   requests.push({ method: req.method, route, directory: req.headers['x-opencode-directory'] || null })
   if (route === '/global/health') return json(res, 200, { healthy: true, backend: 'codex', version: 'navigation-fixture' })
@@ -56,6 +62,15 @@ const server = http.createServer(async (req, res) => {
   if (route === '/codex/limits') return json(res, 200, { rateLimits: {} })
   if (route === '/provider') return json(res, 200, { all: [], default: {}, connected: [] })
   if (['/agent', '/command', '/permission', '/question', '/project'].includes(route)) return json(res, 200, [])
+  if (route === '/session' && req.method === 'POST') {
+    await new Promise(resolve => setTimeout(resolve, createDelay))
+    if (createFailure) return json(res, 503, { error: 'Simulated creation failure' })
+    const id = 'navigation-new-' + ++creations
+    const created = { ...sessions[0], id, title: 'New session ' + creations, directory: req.headers['x-opencode-directory'] || '/navigation', time: { created: Date.now(), updated: Date.now() } }
+    ids.push(id); sessions.push(created); messages.set(id, [])
+    event('session.created', { info: created })
+    return json(res, 200, created)
+  }
   if (['/session', '/experimental/session', '/codex/library'].includes(route)) return json(res, 200, sessions)
   if (['/session/status', '/config', '/config/providers'].includes(route)) return json(res, 200, {})
   if (segments[0] === 'session' && ids.includes(id)) {

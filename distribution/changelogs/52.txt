@@ -1,0 +1,2 @@
+v0.4.24
+Fix Android /new crashes and preserve the current project. Add /clear to start a fresh conversation.
