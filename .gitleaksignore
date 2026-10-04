@@ -1,0 +1,3 @@
+# Historical media-test dummy password (hex digits in order), used only by a local ephemeral server.
+# The test now generates a fresh random password for each run.
+6f5ac31536adbc837ee000ad14f631fcdff889ec:server/codex/media.test.mjs:generic-api-key:86

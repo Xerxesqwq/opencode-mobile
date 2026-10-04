@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { randomBytes } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -83,11 +84,12 @@ test('binary media routes require auth and serve only raster images referenced b
   const bridge = new EventEmitter()
   bridge.threads = new Map([['fixture', { thread, turns: new Map([['turn', { ...turn, items }]]) }]])
   bridge.rpc = { connect: async () => ({}), call: async () => { throw Object.assign(new Error('No such item'), { status: 404 }) } }
-  const server = createGateway({ bridge, password: '0123456789abcdef' })
+  const password = randomBytes(24).toString('base64')
+  const server = createGateway({ bridge, password })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => { server.closeAllConnections(); server.close() })
   const base = `http://127.0.0.1:${server.address().port}/session/fixture/codex/media/`
-  const headers = { Authorization: `Basic ${Buffer.from('opencode:0123456789abcdef').toString('base64')}` }
+  const headers = { Authorization: `Basic ${Buffer.from('opencode:' + password).toString('base64')}` }
   assert.equal((await fetch(base + 'view/0')).status, 401)
   assert.equal((await fetch(base + 'view/0', { headers: { ...headers, Origin: 'https://other.example' } })).status, 403)
   const good = await fetch(base + 'view/0?path=/etc/passwd', { headers })
