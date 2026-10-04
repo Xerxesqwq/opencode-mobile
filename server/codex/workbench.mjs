@@ -1,11 +1,13 @@
 import { message, session } from './mapping.mjs'
+import { turnPage } from './turns.mjs'
 
 const fail = (status, text) => Object.assign(new Error(text), { status })
 
 export async function allTurns(rpc, id, itemsView = 'full') {
   const rows = [], seen = new Set()
   for (let cursor; ;) {
-    const page = await rpc.call('thread/turns/list', { threadId: id, cursor, limit: 20, sortDirection: 'desc', itemsView })
+    const params = { threadId: id, cursor, limit: 20, sortDirection: 'desc', itemsView }
+    const page = itemsView === 'full' ? await turnPage(rpc, params) : await rpc.call('thread/turns/list', params)
     rows.push(...page.data)
     if (!page.nextCursor || seen.has(page.nextCursor)) return rows
     seen.add(page.nextCursor); cursor = page.nextCursor

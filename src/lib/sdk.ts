@@ -8,6 +8,7 @@ import { SSEParser } from "./sse"
 import { apiErrorFor } from "./api-error"
 import { loadSessionList } from "./session-list"
 import type { FileRoot } from "./file-roots"
+import { imageSource } from "./image-source"
 import type { CodexSession, CodexOptions, CodexSettingsPatch, CodexLimits, CodexSearchPage, CodexFileChanges, CodexTaskState, CodexDraft } from "./codex"
 
 export { ApiAuthError, isAuthError } from "./api-error"
@@ -191,7 +192,7 @@ export class ApiError extends Error {
   }
 }
 
-function createHeaders(config: ClientConfig): HeadersInit {
+function createHeaders(config: ClientConfig): Record<string, string> {
   return buildRequestHeaders(config)
 }
 
@@ -258,6 +259,7 @@ export function createClient(config: ClientConfig) {
   // trailing slash is untouched.
   config = { ...config, baseUrl: config.baseUrl.replace(/\/+$/, "") }
   return {
+    imageSource: (url: string) => imageSource(config.baseUrl, createHeaders(config), url),
     global: {
       // `timeoutMs` overrides the default REQUEST_TIMEOUT_MS — used by the
       // onboarding connection test to fail fast on a bad/unreachable IP

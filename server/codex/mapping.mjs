@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { imageParts, imageMarkdown, withoutImageData } from './media.mjs'
 
 export const projectId = cwd => createHash('sha256').update(cwd).digest('hex').slice(0, 20)
 export const project = cwd => ({ id: projectId(cwd), name: cwd.split('/').filter(Boolean).at(-1) || '/', path: { cwd, root: cwd, absolute: cwd } })
@@ -10,6 +11,7 @@ export const session = thread => ({
 
 export function messages(thread, turns) {
   return turns.flatMap(turn => turn.items.map((item, index) => message(thread, turn, item, index)))
+    .filter(row => row.parts.length || row.info.error)
 }
 
 export function message(thread, turn, item, index = 0) {
@@ -23,19 +25,29 @@ export function message(thread, turn, item, index = 0) {
     ...(!user && completed ? { finish: turn.status === 'interrupted' ? 'stop' : 'end_turn' } : {}),
   }
   const base = { id: `${id}:0`, sessionID: thread.id, messageID: id }
-  if (user) return { info, parts: item.content.map((part, n) => ({ ...base, id: `${id}:${n}`,
-    ...(part.type === 'text' ? { type: 'text', text: part.text } : part.type === 'image' ? { type: 'file', mime: 'image/*', url: part.url } : { type: 'text', text: `[${part.type}] ${part.path || part.name || ''}` }),
-  })) }
-  if (item.type === 'agentMessage' || item.type === 'plan') return { info, parts: [{ ...base, type: 'text', text: [item.text || '', ...(item.questions || []).map(q => [q.title, ...(q.options || []).map(option => `• ${option}`)].join('\n'))].filter(Boolean).join('\n\n') }] }
+  const images = imageParts(thread, item, base)
+  if (user) return { info, parts: [...item.content.flatMap((part, n) => ['image', 'localImage'].includes(part.type) ? [] : [{ ...base, id: `${id}:${n}`,
+    ...(part.type === 'text' ? { type: 'text', text: part.text } : { type: 'text', text: `[${part.type}] ${part.path || part.name || ''}` }),
+  }]), ...images] }
+  if (item.type === 'agentMessage' || item.type === 'plan') {
+    const text = [imageMarkdown(thread, item), ...(item.questions || []).map(q => [q.title, ...(q.options || []).map(option => `• ${option}`)].join('\n'))].filter(Boolean).join('\n\n')
+    return { info, parts: text.trim() ? [{ ...base, type: 'text', text }] : [] }
+  }
   if (item.type === 'contextCompaction') return { info, parts: [{ ...base, type: 'text', text: item.status === 'inProgress' ? 'Compacting context…' : 'Context compacted.' }] }
-  if (item.type === 'reasoning') return { info, parts: [{ ...base, type: 'reasoning', text: (item.summary?.length ? item.summary : item.content || []).join('\n') }] }
-  const failed = item.status === 'failed' || item.status === 'declined' || item.success === false
-  const output = item.aggregatedOutput ?? item.result ?? item.contentItems ?? item.changes ?? item.output ?? item.text ?? item
-  return { info, parts: [{ ...base, type: 'tool', callID: item.id, tool: item.type === 'commandExecution' ? 'bash' : item.type === 'fileChange' ? 'apply_patch' : item.tool || item.type,
-    state: { status: failed ? 'error' : item.status === 'inProgress' ? 'running' : 'completed',
-      title: item.command || item.tool || item.type, input: item.arguments ?? (item.command ? { command: item.command, cwd: item.cwd } : item),
+  if (item.type === 'reasoning') {
+    const text = (item.summary?.some(text => text.trim()) ? item.summary : item.content || []).join('\n')
+    return { info, parts: text.trim() ? [{ ...base, type: 'reasoning', text }] : [] }
+  }
+  const failed = item.status === 'failed' || item.status === 'declined' || item.success === false || !!item.failure
+  const imageTool = item.type === 'imageGeneration' || item.type === 'imageView'
+  const output = withoutImageData(imageTool ? (item.revisedPrompt || item.savedPath || item.path || '')
+    : item.aggregatedOutput ?? item.result ?? item.contentItems ?? item.changes ?? item.output ?? item.text ?? item)
+  return { info, parts: [...images, { ...base, type: 'tool', callID: item.id, tool: item.type === 'commandExecution' ? 'bash' : item.type === 'fileChange' ? 'apply_patch' : item.tool || item.name || item.type,
+    state: { status: failed ? 'error' : ['inProgress', 'in_progress'].includes(item.status) ? 'running' : 'completed',
+      title: item.type === 'imageGeneration' ? 'Generate image' : item.type === 'imageView' ? 'View image' : item.command || item.tool || item.name || item.type,
+      input: withoutImageData(imageTool ? { path: item.savedPath || item.path, prompt: item.revisedPrompt } : item.arguments ?? (item.command ? { command: item.command, cwd: item.cwd } : item)),
       output: typeof output === 'string' ? output : JSON.stringify(output, null, 2),
-      ...(failed ? { error: { message: item.error?.message || `Codex ${item.status || 'tool failed'}` } } : {}),
+      ...(failed ? { error: { message: item.error?.message || item.failure?.message || `Codex ${item.status || 'tool failed'}` } } : {}),
     },
   }] }
 }

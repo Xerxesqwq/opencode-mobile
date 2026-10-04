@@ -1,0 +1,3 @@
+v0.4.22
+
+Hide empty assistant records. Show generated, reviewed and Markdown images with authenticated loading, full-screen zoom, and retry for unavailable files. Page image-heavy Codex history without giant turn payloads.

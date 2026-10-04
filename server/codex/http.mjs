@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { project } from './mapping.mjs'
+import { readMedia } from './media.mjs'
 
 const failure = (status, text) => Object.assign(new Error(text), { status })
 const hash = value => createHash('sha256').update(value).digest()
@@ -51,6 +52,12 @@ export function createGateway({ bridge, password, username = 'opencode', directo
     const method = req.method
     const init = await bridge.rpc.connect()
     const cwd = path.resolve(req.headers['x-opencode-directory'] ? decodeURIComponent(req.headers['x-opencode-directory']) : directory)
+    if (method === 'GET' && route.length === 6 && route[0] === 'session' && route[2] === 'codex' && route[3] === 'media') {
+      const media = await readMedia(bridge, route[1], route[4], route[5])
+      res.writeHead(200, { 'Content-Type': media.mime, 'Content-Length': media.bytes.length, 'Content-Disposition': 'inline' })
+      res.end(media.bytes)
+      return
+    }
     if (method === 'GET' && url.pathname === '/global/event') {
       if (streams.size >= 20) throw failure(503, 'Too many event streams')
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' })
@@ -68,7 +75,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
   }
   async function dispatch(method, url, route, req, cwd, init) {
     if (method === 'GET') {
-      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.5.0', backend: 'codex', codex: init.userAgent }
+      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.6.0', backend: 'codex', codex: init.userAgent }
       if (url.pathname === '/path') return { home: homedir(), state: init.codexHome, config: init.codexHome, worktree: cwd, directory: cwd }
       if (url.pathname === '/project/current') return project(cwd)
       if (url.pathname === '/project') return [...new Set((await bridge.list()).map(t => t.cwd))].map(project)

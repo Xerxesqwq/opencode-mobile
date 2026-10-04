@@ -1,4 +1,5 @@
 import { queueCodexDraft, takeCodexDraft } from "../../src/lib/codex-drafts"
+import { hasMessageContent } from "../../src/lib/message-content"
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import {
   View,
@@ -233,6 +234,7 @@ export default function SessionScreen() {
           message: msg,
           parts: (parts && parts[msg.id]) || [],
         }))
+        .filter(row => hasMessageContent(row.message, row.parts))
         .reverse(),
     [messages, parts, revertMessageID],
   )
@@ -831,6 +833,7 @@ export default function SessionScreen() {
                     isDark={isDark}
                     onLongPress={handleMessageLongPress}
                     onFork={isCodex ? forkCodex : undefined}
+                    imageSource={sessionClient?.imageSource}
                   />
                   </View>
                 )}

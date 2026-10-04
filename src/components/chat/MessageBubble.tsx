@@ -1,12 +1,13 @@
 import { memo } from "react"
-import { View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { Markdown } from "../markdown"
 import { ToolCallCard } from "./ToolCallCard"
 import { ReasoningBlock } from "./ReasoningBlock"
 import type { Message, Part } from "../../lib/sdk"
-
-const SCREEN_WIDTH = Dimensions.get("window").width
+import { MessageImage } from "./MessageImage"
+import type { ImageSourceResolver } from "../../lib/image-source"
+import { hasMessageContent } from "../../lib/message-content"
 
 function isImageMime(mime?: string): boolean {
   return !!mime && mime.startsWith("image/")
@@ -21,12 +22,13 @@ interface Props {
   // so it stays correct even if the memo below bails on a stale render.
   onLongPress?: (messageID: string) => void
   onFork?: (messageID: string) => void
+  imageSource?: ImageSourceResolver
 }
 
 // TODO: Replace with streamdown-rn once React 19 types PR lands - it has
 // built-in block-level memoization that eliminates re-renders for stable blocks
 export const MessageBubble = memo(
-  function MessageBubble({ message, parts, isDark, onLongPress, onFork }: Props) {
+  function MessageBubble({ message, parts, isDark, onLongPress, onFork, imageSource }: Props) {
     const isUser = message.role === "user"
 
     const textParts = parts.filter((p) => p.type === "text")
@@ -35,6 +37,7 @@ export const MessageBubble = memo(
     const fileParts = parts.filter((p) => p.type === "file" && isImageMime(p.mime))
     const text = textParts.map((p) => p.text).join("\n") || ""
     const reasoning = reasoningParts.map((p) => p.text).join("\n") || ""
+    if (!hasMessageContent(message, parts)) return null
 
     return (
       <TouchableOpacity
@@ -64,25 +67,7 @@ export const MessageBubble = memo(
         </View>
 
         {/* Image attachments */}
-        {fileParts.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.imageRow}
-            style={s.imageScroll}
-          >
-            {fileParts.map((fp) => (
-              <View key={fp.id} style={s.imageWrap}>
-                <Image source={{ uri: fp.url }} style={s.attachedImage} resizeMode="cover" />
-                {fp.filename && (
-                  <Text style={[s.imageLabel, isDark && s.imageLabelDark]} numberOfLines={1}>
-                    {fp.filename}
-                  </Text>
-                )}
-              </View>
-            ))}
-          </ScrollView>
-        )}
+        {fileParts.map(fp => <MessageImage key={fp.id} source={fp.url ? (imageSource ? imageSource(fp.url) : { uri: fp.url }) : undefined} label={fp.filename} />)}
 
         {/* Reasoning (collapsible) */}
         {reasoning.length > 0 && <ReasoningBlock text={reasoning} isDark={isDark} />}
@@ -95,7 +80,7 @@ export const MessageBubble = memo(
             </Text>
           ) : (
             <View style={s.markdownWrap}>
-              <Markdown>{text}</Markdown>
+              <Markdown imageSource={imageSource}>{text}</Markdown>
             </View>
           ))}
 
@@ -103,6 +88,7 @@ export const MessageBubble = memo(
         {toolParts.map((tool) => (
           <ToolCallCard key={tool.id} tool={tool} isDark={isDark} />
         ))}
+        {!!message.error?.message && <Text style={{ color: '#d54343', marginTop: 8 }}>{message.error.message}</Text>}
 
         {/* Tokens/cost for assistant messages */}
         {!isUser && message.tokens && (
@@ -124,6 +110,7 @@ export const MessageBubble = memo(
     if (prev.message !== next.message) return false
     if (prev.isDark !== next.isDark) return false
     if (prev.onLongPress !== next.onLongPress) return false
+    if (prev.onFork !== next.onFork || prev.imageSource !== next.imageSource) return false
     if (prev.parts.length !== next.parts.length) return false
     for (let i = 0; i < prev.parts.length; i++) {
       if (prev.parts[i] !== next.parts[i]) return false
@@ -161,16 +148,4 @@ const s = StyleSheet.create({
   tokens: { fontSize: 11, color: "#999999", marginTop: 8 },
   tokensDark: { color: "#666666" },
 
-  // Images
-  imageScroll: { marginBottom: 8 },
-  imageRow: { gap: 8 },
-  imageWrap: { alignItems: "center" },
-  attachedImage: {
-    width: Math.min(200, SCREEN_WIDTH * 0.5),
-    height: Math.min(200, SCREEN_WIDTH * 0.5),
-    borderRadius: 8,
-    backgroundColor: "#e5e5e5",
-  },
-  imageLabel: { fontSize: 10, color: "#666666", marginTop: 2, maxWidth: 200 },
-  imageLabelDark: { color: "#888888" },
 })

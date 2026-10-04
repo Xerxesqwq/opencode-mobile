@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "inferenceRequests": 0,
+  "hiddenEmptyRecords": 121,
+  "messages": 197,
+  "historyBytes": 897123,
+  "images": [
+    {
+      "type": "imageGeneration",
+      "bytes": 1374414,
+      "sha256": "790ad06c27ed5b22a3dce0b6624ad47195ac9e0d477641cdf0abe81dcb0136d1"
+    },
+    {
+      "type": "imageView",
+      "bytes": 72686,
+      "sha256": "c507eb6feedb19bcc1d5f0c4fda79cf03f1475d8f656164e0c768ab29bf00349"
+    }
+  ],
+  "checks": [
+    "empty records omitted",
+    "generated image bytes",
+    "viewed image bytes",
+    "authenticated binary delivery",
+    "no base64 in chat",
+    "bounded native item pages",
+    "no inference or settings changes"
+  ]
+}

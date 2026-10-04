@@ -1,4 +1,5 @@
 import { restoredUsage } from './usage.mjs'
+import { turnPage } from './turns.mjs'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { input, message, messages, session } from './mapping.mjs'
@@ -85,7 +86,7 @@ export class Bridge extends EventEmitter {
     const state = { thread, turns: new Map(), diffs: '', live: new Map(), ...observed, settings }
     this.threads.set(id, state)
     try {
-      const page = await this.rpc.call('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'full' })
+      const page = await turnPage(this.rpc, { threadId: id, limit: 1, sortDirection: 'desc' })
       const live = state.turns
       state.turns = new Map(page.data.reverse().map(turn => [turn.id, turn]))
       for (const [turnId, turn] of live) {
@@ -107,9 +108,9 @@ export class Bridge extends EventEmitter {
     const turns = []
     const seen = new Set()
     for (let cursor; ;) {
-      const page = await this.rpc.call('thread/turns/list', { threadId: id, cursor, limit: 20, sortDirection: 'desc', itemsView: 'full' })
+      const page = await turnPage(this.rpc, { threadId: id, cursor, limit: 20, sortDirection: 'desc' })
       turns.push(...page.data)
-      if (limit && turns.reduce((n, turn) => n + turn.items.length, 0) >= limit) break
+      if (limit && messages(state.thread, turns).length >= limit) break
       if (!page.nextCursor || seen.has(page.nextCursor)) break
       seen.add(page.nextCursor); cursor = page.nextCursor
     }
@@ -227,6 +228,7 @@ export class Bridge extends EventEmitter {
     clearTimeout(this.updates.get(key))
     this.updates.delete(key)
     const mapped = message(state.thread, turn, item, turn.items.findIndex(row => row.id === item.id))
+    if (!mapped.parts.length && !mapped.info.error) return
     this.event('message.updated', { info: mapped.info })
     for (const part of mapped.parts) this.event('message.part.updated', { part })
   }

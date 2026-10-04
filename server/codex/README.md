@@ -129,3 +129,26 @@ CODEX_FAST_REPORT=/absolute/path/report.json node fast-live-check.mjs
 The check deletes its fixture by default. Set `CODEX_FAST_KEEP_FIXTURE=1` only
 when following with `scripts/check-codex-fast.py` or the `codex_fast` CUA scenario;
 delete that exact report's thread through `thread/delete` after UI verification.
+
+### Images and empty records
+
+Gateway 0.6.0 omits empty assistant text/reasoning records and maps native viewed,
+generated and attached images to authenticated binary endpoints:
+`GET /session/:id/codex/media/:itemId/:index`. Local Markdown image references
+use the same route. Only image references present in the requested native item
+are accepted; the route has no arbitrary file-path parameter.
+
+Image bodies have a 24 MiB limit, use detected raster MIME types and carry
+`Cache-Control: no-store`. Missing files return 404; unsupported formats return
+415. Generated images can fall back to their retained inline native result.
+PNG, JPEG, GIF, WebP, BMP and AVIF are recognized; actual decoding depends on the
+client platform. SVG requires conversion to a supported raster format.
+External HTTP images load directly without gateway credentials.
+
+History reads page native items in bounded batches so inline image payloads
+remain below the daemon's WebSocket limit. Chat JSON contains media references
+and compact tool metadata. App 0.4.22 supports preview, zoom, pan and retry.
+
+Read-only native verification: set `CODEX_MEDIA_SESSION` and
+`CODEX_MEDIA_REPORT`, then run `node media-live-check.mjs`. This check starts
+no turns and changes no session settings.

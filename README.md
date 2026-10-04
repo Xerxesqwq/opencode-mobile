@@ -236,3 +236,7 @@ share the current working directory and files.
 Version 0.4.21 adds Fast/Standard speed selection under **Codex session → Mode**.
 `/fast` opens the same controls. Status shows the effective speed, and unsupported
 models disable Fast. Changes apply to subsequent turns of the current session.
+
+Version 0.4.22 hides empty assistant records and displays generated, viewed and
+Markdown images. Tap a preview for full-screen zoom and drag. Unavailable files
+show a retry action. Gateway media requests use the saved connection credentials.

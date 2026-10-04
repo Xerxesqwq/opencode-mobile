@@ -1713,6 +1713,16 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_codex_media():
+    """Verify image previews and empty-message filtering without model calls."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-media")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-media.py")),
+        "--output-dir", str(output),
+    ], timeout=480, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def run_scenario_codex_fast():
     """Verify native Fast/Standard controls using only a Luna test thread."""
     output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-fast")).resolve()
@@ -2101,6 +2111,7 @@ Examples:
             "codex_workbench": run_scenario_codex_workbench,
             "codex_fork": run_scenario_codex_fork,
             "codex_fast": run_scenario_codex_fast,
+            "codex_media": run_scenario_codex_media,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(
