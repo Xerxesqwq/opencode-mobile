@@ -1,6 +1,8 @@
+import { restoredUsage } from './usage.mjs'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { input, message, messages, session } from './mapping.mjs'
+import { settingsFromResume, controlSnapshot, settingsPatch } from './controls.mjs'
 
 export class Bridge extends EventEmitter {
   constructor(rpc) {
@@ -10,14 +12,22 @@ export class Bridge extends EventEmitter {
     this.pending = new Map()
     this.attaching = new Map()
     this.updates = new Map()
+    this.observed = new Map()
     rpc.on('message', data => this.receive(data))
     rpc.on('disconnect', () => {
-      this.threads.clear(); this.pending.clear(); this.attaching.clear()
+      this.threads.clear(); this.pending.clear(); this.attaching.clear(); this.observed.clear()
       for (const timer of this.updates.values()) clearTimeout(timer)
       this.updates.clear()
       this.emit('disconnect')
     })
   }
+
+  describe(thread) {
+    const state = this.threads.get(thread.id)
+    return { ...session(thread), ...(state ? { codex: controlSnapshot(state) } : {}) }
+  }
+
+  changed(state) { this.event('session.updated', { info: this.describe(state.thread) }) }
 
   event(type, properties) { this.emit('event', { type, properties }) }
   status(id, status) { this.event('session.status', { sessionID: id, status: { type: status === 'active' ? 'busy' : 'idle' } }) }
@@ -66,7 +76,10 @@ export class Bridge extends EventEmitter {
     const result = await this.rpc.call('thread/resume', { threadId: id, excludeTurns: true })
     const thread = result.thread
     // Register before fetching history so live events are retained during hydration.
-    const state = { thread, turns: new Map(), diffs: '', live: new Map() }
+    const observed = this.observed.get(id) || {}
+    const settings = { ...settingsFromResume(result), ...observed.settings }
+    thread.model = settings.model; thread.reasoningEffort = settings.effort
+    const state = { thread, turns: new Map(), diffs: '', live: new Map(), ...observed, settings }
     this.threads.set(id, state)
     try {
       const page = await this.rpc.call('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'full' })
@@ -75,6 +88,11 @@ export class Bridge extends EventEmitter {
       for (const [turnId, turn] of live) {
         const stored = state.turns.get(turnId)
         state.turns.set(turnId, { ...stored, ...turn, items: [...new Map([...(stored?.items || []), ...turn.items].map(item => [item.id, item])).values()] })
+      }
+      if (!state.tokenUsage && thread.path) {
+        const init = await this.rpc.connect()
+        const usage = await restoredUsage(thread.path, init.codexHome)
+        if (!state.tokenUsage && usage) state.tokenUsage = usage
       }
       this.status(id, thread.status.type)
       return state
@@ -104,9 +122,57 @@ export class Bridge extends EventEmitter {
   async create(cwd, title) {
     const result = await this.rpc.call('thread/start', { cwd, approvalPolicy: 'on-request', sandbox: 'workspace-write' })
     if (title) { await this.rpc.call('thread/name/set', { threadId: result.thread.id, name: title }); result.thread.name = title }
-    this.threads.set(result.thread.id, { thread: result.thread, turns: new Map(), diffs: '' })
-    this.event('session.created', { info: session(result.thread) })
-    return session(result.thread)
+    const observed = this.observed.get(result.thread.id) || {}
+    const settings = { ...settingsFromResume(result), ...observed.settings }
+    result.thread.model = settings.model; result.thread.reasoningEffort = settings.effort
+    this.threads.set(result.thread.id, { thread: result.thread, turns: new Map(), diffs: '', ...observed, settings })
+    this.event('session.created', { info: this.describe(result.thread) })
+    return this.describe(result.thread)
+  }
+
+  async diff(id) {
+    const state = await this.attach(id)
+    if (state.diffs) return state.diffs
+    const latest = [...state.turns.values()].at(-1)
+    return (latest?.items || []).filter(item => item.type === 'fileChange')
+      .flatMap(item => item.changes || []).map(change => `${change.path}\n${change.diff || ''}`).join('\n\n')
+  }
+
+  async updateSettings(id, body) {
+    const state = await this.attach(id)
+    const params = await settingsPatch(this.rpc, state, body)
+    // The native notification contains the effective settings. A brand-new
+    // empty thread has no rollout yet, so thread/resume can fail before its first turn.
+    let timer, listener
+    const confirmed = new Promise(resolve => {
+      listener = packet => {
+        if (packet.method === 'thread/settings/updated' && packet.params?.threadId === id) resolve(packet.params.threadSettings)
+      }
+      this.rpc.on('message', listener)
+      timer = setTimeout(() => resolve(null), 10000)
+    })
+    try {
+      await this.rpc.call('thread/settings/update', params)
+      const settings = await confirmed
+      if (settings) state.settings = { ...state.settings, ...settings }
+      else state.settings = settingsFromResume(await this.rpc.call('thread/resume', { threadId: id, excludeTurns: true }))
+    } finally { clearTimeout(timer); this.rpc.off('message', listener) }
+    state.thread.model = state.settings.model
+    state.thread.reasoningEffort = state.settings.effort
+    this.changed(state)
+    return this.describe(state.thread)
+  }
+
+  async compact(id) {
+    const state = await this.attach(id)
+    if (state.compacting || state.thread.status.type === 'active' || [...state.turns.values()].some(turn => turn.status === 'inProgress')) {
+      throw Object.assign(new Error('Wait for the current turn to finish before compacting'), { status: 409 })
+    }
+    if (state.thread.canAcceptDirectInput === false) throw Object.assign(new Error('This thread does not accept direct input'), { status: 409 })
+    state.compacting = true; this.changed(state)
+    try { await this.rpc.call('thread/compact/start', { threadId: id }) }
+    catch (error) { state.compacting = false; this.changed(state); throw error }
+    return this.describe(state.thread)
   }
 
   async prompt(id, body) {
@@ -164,17 +230,33 @@ export class Bridge extends EventEmitter {
     if (method === 'thread/started') { this.event('session.created', { info: session(p.thread) }); return }
     if (['thread/closed', 'thread/deleted', 'thread/reverted'].includes(method)) {
       this.threads.delete(p.threadId)
+      this.observed.delete(p.threadId)
       this.status(p.threadId, 'idle')
       return
     }
     const state = this.threads.get(p.threadId)
+    if (method === 'thread/tokenUsage/updated' || method === 'thread/settings/updated') {
+      const patch = method === 'thread/tokenUsage/updated' ? { tokenUsage: p.tokenUsage } : { settings: p.threadSettings }
+      this.observed.set(p.threadId, { ...this.observed.get(p.threadId), ...patch })
+      if (state) {
+        if (patch.settings) patch.settings = { ...state.settings, ...patch.settings }
+        Object.assign(state, patch)
+        if (patch.settings) {
+          state.thread.model = patch.settings.model
+          state.thread.reasoningEffort = patch.settings.effort
+        }
+        this.changed(state)
+      }
+      return
+    }
     if (method === 'thread/status/changed') {
-      if (state) state.thread.status = p.status
+      if (state) { state.thread.status = p.status; this.changed(state) }
       this.status(p.threadId, p.status.type); return
     }
     if (!state) return
-    if (method === 'thread/name/updated') { state.thread.name = p.threadName; this.event('session.updated', { info: session(state.thread) }); return }
+    if (method === 'thread/name/updated') { state.thread.name = p.threadName; this.event('session.updated', { info: this.describe(state.thread) }); return }
     if (method === 'turn/started' || method === 'turn/completed') {
+      if (method === 'turn/completed') state.compacting = false
       const previous = state.turns.get(p.turn.id)
       const turn = { ...p.turn, items: p.turn.items?.length ? p.turn.items : previous?.items || [] }
       state.turns.set(turn.id, turn)
@@ -182,16 +264,22 @@ export class Bridge extends EventEmitter {
       state.thread.updatedAt = Math.floor(Date.now() / 1000)
       for (const item of turn.items) this.emitItem(state, turn, item)
       if (turn.error) this.event('session.error', { sessionID: p.threadId, error: { message: turn.error.message } })
-      this.event('session.updated', { info: session(state.thread) })
+      this.event('session.updated', { info: this.describe(state.thread) })
       this.status(p.threadId, method === 'turn/started' ? 'active' : 'idle')
       return
     }
+    if (method === 'turn/plan/updated') { state.plan = { explanation: p.explanation, steps: p.plan }; this.changed(state); return }
     if (method === 'turn/diff/updated') { state.diffs = p.diff; return }
     if (method === 'error') { this.event('session.error', { sessionID: p.threadId, error: p.error }); return }
     if (!p.turnId) return
     const turn = state.turns.get(p.turnId) || { id: p.turnId, status: 'inProgress', startedAt: Date.now() / 1000, items: [] }
     state.turns.set(turn.id, turn)
     if (method === 'item/started' || method === 'item/completed') {
+      if (p.item.type === 'contextCompaction') {
+        state.compacting = method === 'item/started'
+        p.item = { ...p.item, status: state.compacting ? 'inProgress' : 'completed' }
+        this.changed(state)
+      }
       const index = turn.items.findIndex(item => item.id === p.item.id)
       if (index < 0) turn.items.push(p.item)
       if (index >= 0) turn.items[index] = p.item

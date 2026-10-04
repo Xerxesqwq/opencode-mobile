@@ -6,7 +6,7 @@ import path from 'node:path'
 import { CodexRPC } from './rpc.mjs'
 const password = (await readFile(process.env.CODEX_GATEWAY_PASSWORD_FILE, 'utf8')).trim()
 const base = process.env.CODEX_GATEWAY_URL || 'http://127.0.0.1:4098'
-const headers = { Authorization: `Basic ${Buffer.from('opencode:' + password).toString('base64')}`, 'Content-Type': 'application/json' }
+const headers = { Authorization: `Basic ${Buffer.from((process.env.CODEX_GATEWAY_USERNAME || 'opencode') + ':' + password).toString('base64')}`, 'Content-Type': 'application/json' }
 const request = async (route, body) => {
   const response = await fetch(base + route, { headers, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) })
   assert.equal(response.status, 200, await response.clone().text())

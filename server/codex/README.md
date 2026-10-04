@@ -10,15 +10,18 @@ Tested protocol: Codex CLI/app-server **0.160.0**. The experimental paginated hi
 - Join a live thread owned by the same Codex daemon; continue or steer its active turn, and interrupt it.
 - Create sessions in a selected existing directory.
 - Stream assistant text, reasoning summaries, shell output and other tool results.
-- Choose models and reasoning effort from the daemon's current catalog.
+- Save model and reasoning effort to the current session using the daemon's current catalog, including max/ultra where supported.
+- Change sandbox permission profiles, approval policy, and plan/default mode; reflect effective settings confirmed by Codex.
+- Compact context after the active turn finishes, inspect context and cumulative token usage, and view account usage windows.
+- Inspect live task plans, loaded instruction paths, and the latest turn's file diff.
 - Send text and embedded images.
 - Answer command/file/permission approvals and structured questions. Pending requests stay on the server while the phone disconnects. Requests resolved on another client disappear here too.
 
-Existing threads retain their permissions and model unless the user explicitly selects another model for a new turn. New threads use `workspace-write` and `on-request`. A phone disconnect leaves the Codex task running.
+Existing threads retain their permissions, model and reasoning effort until the user changes them. Prompts inherit the effective session settings. New threads use `workspace-write` and `on-request`. A phone disconnect leaves the Codex task running.
 
 Live takeover applies to threads loaded in the daemon addressed by `CODEX_SOCKET`. A separate standalone CLI process can have its own runtime; a stored rollout alone does not give this gateway control of that process.
 
-Dynamic tools and authentication/attestation requests owned by another Codex client still require that client. The gateway reports these requests and leaves their handling with the owner. Revert, deletion, archiving, OpenCode slash commands and structured file-diff endpoints are unavailable; the app hides edit/delete actions for Codex connections. File changes remain visible as tool output.
+Dynamic tools and authentication/attestation requests owned by another Codex client still require that client. The gateway reports these requests and leaves their handling with the owner. Revert, deletion, archiving, OpenCode slash commands and structured file-diff endpoints are unavailable; the app hides edit/delete actions for Codex connections. File changes remain visible as tool output and through the Codex diff view.
 
 ## Start
 
@@ -76,7 +79,9 @@ Forward the router's external port to this Caddy listener and permit it in the h
 
 ## Android
 
-Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. An unselected model inherits the session's settings.
+Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/model` and `/new` run locally or open the matching controls.
+
+Context uses the native `last.totalTokens` and `modelContextWindow`; cached input and reasoning output are subsets, not additional tokens. Codex 0.160 metadata-only resume omits usage replay for loaded threads. The gateway restores the latest token-count record from at most the last 8 MiB of the daemon-provided rollout, restricted to the daemon's state directory. It returns only token counts; live notifications supersede the restored snapshot. If no snapshot is available, the panel waits for the next native usage event.
 
 ## Verification
 
@@ -86,3 +91,13 @@ npm audit --omit=dev --registry=https://registry.npmjs.org
 ```
 
 Tests exercise protocol framing through a real Unix WebSocket, REST/SSE authentication and approval round trips, replay deduplication, disconnect recovery, existing history, guarded steering, interruptions, and permission decisions. Live model and Android UI checks are additional release gates.
+
+Opt-in live checks create dedicated test threads:
+
+```sh
+node live-controls-check.mjs
+CODEX_GATEWAY_URL=https://your-host:port \
+CODEX_GATEWAY_USERNAME=opencode \
+CODEX_GATEWAY_PASSWORD_FILE="$HOME/.config/opencode-codex/password" \
+node live-check.mjs
+```

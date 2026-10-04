@@ -1,0 +1,13 @@
+{
+  "sessionId": "01a105a9-95df-7c81-99a2-3a3916f27cdc",
+  "title": "Codex controls test 1791096362",
+  "checks": [
+    "effort",
+    "permissions",
+    "mode",
+    "context",
+    "compact",
+    "reconnect"
+  ],
+  "passed": true
+}

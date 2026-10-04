@@ -27,6 +27,7 @@ export function message(thread, turn, item, index = 0) {
     ...(part.type === 'text' ? { type: 'text', text: part.text } : part.type === 'image' ? { type: 'file', mime: 'image/*', url: part.url } : { type: 'text', text: `[${part.type}] ${part.path || part.name || ''}` }),
   })) }
   if (item.type === 'agentMessage' || item.type === 'plan') return { info, parts: [{ ...base, type: 'text', text: [item.text || '', ...(item.questions || []).map(q => [q.title, ...(q.options || []).map(option => `• ${option}`)].join('\n'))].filter(Boolean).join('\n\n') }] }
+  if (item.type === 'contextCompaction') return { info, parts: [{ ...base, type: 'text', text: item.status === 'inProgress' ? 'Compacting context…' : 'Context compacted.' }] }
   if (item.type === 'reasoning') return { info, parts: [{ ...base, type: 'reasoning', text: (item.summary?.length ? item.summary : item.content || []).join('\n') }] }
   const failed = item.status === 'failed' || item.status === 'declined' || item.success === false
   const output = item.aggregatedOutput ?? item.result ?? item.contentItems ?? item.changes ?? item.output ?? item.text ?? item

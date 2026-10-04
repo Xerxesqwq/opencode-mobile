@@ -1,10 +1,11 @@
+import { controlOptions, modelCatalog } from './controls.mjs'
 import http from 'node:http'
 import https from 'node:https'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { homedir } from 'node:os'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { project, session } from './mapping.mjs'
+import { project } from './mapping.mjs'
 
 const failure = (status, text) => Object.assign(new Error(text), { status })
 const hash = value => createHash('sha256').update(value).digest()
@@ -66,7 +67,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
   }
   async function dispatch(method, url, route, req, cwd, init) {
     if (method === 'GET') {
-      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.1.0', backend: 'codex', codex: init.userAgent }
+      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.2.0', backend: 'codex', codex: init.userAgent }
       if (url.pathname === '/path') return { home: homedir(), state: init.codexHome, config: init.codexHome, worktree: cwd, directory: cwd }
       if (url.pathname === '/project/current') return project(cwd)
       if (url.pathname === '/project') return [...new Set((await bridge.list()).map(t => t.cwd))].map(project)
@@ -75,26 +76,26 @@ export function createGateway({ bridge, password, username = 'opencode', directo
         const root = path.resolve(cwd, url.searchParams.get('path') || '.')
         return (await readdir(root, { withFileTypes: true })).map(entry => ({ name: entry.name, path: path.relative(cwd, path.join(root, entry.name)), absolute: path.join(root, entry.name), type: entry.isDirectory() ? 'directory' : 'file', ignored: entry.name.startsWith('.') }))
       }
-      if (url.pathname === '/session' || url.pathname === '/experimental/session') return (await bridge.list()).map(session)
+      if (url.pathname === '/session' || url.pathname === '/experimental/session') return (await bridge.list()).map(thread => bridge.describe(thread))
       if (url.pathname === '/permission' || url.pathname === '/question') return [...bridge.pending.values()].filter(row => row.question === (url.pathname === '/question')).map(row => row.value)
       if (url.pathname === '/agent') return [{ name: 'codex', description: 'Codex on your server', mode: 'primary', native: true, options: {} }]
+      if (url.pathname === '/codex/options') return controlOptions(bridge.rpc, cwd)
+      if (url.pathname === '/codex/limits') {
+        const result = await bridge.rpc.call('account/rateLimits/read', {})
+        return { rateLimits: result.rateLimits, rateLimitsByLimitId: result.rateLimitsByLimitId, ordinaryUsageAllowed: result.ordinaryUsageAllowed }
+      }
       if (url.pathname === '/command') return []
       if (url.pathname === '/config') return {}
       if (url.pathname === '/provider') {
-        const rows = []
-        for (let cursor; ;) {
-          const page = await bridge.rpc.call('model/list', { cursor })
-          rows.push(...page.data)
-          if (!page.nextCursor) break
-          cursor = page.nextCursor
-        }
-        const models = Object.fromEntries(rows.filter(m => !m.hidden).map(m => [m.model, { id: m.model, name: m.displayName, attachment: m.inputModalities?.includes('image') || false, reasoning: m.supportedReasoningEfforts?.length > 0, tool_call: true, limit: { context: 0, output: 0 }, variants: Object.fromEntries((m.supportedReasoningEfforts || []).map(v => [v.reasoningEffort, { reasoningEffort: v.reasoningEffort }])) }]))
+        const rows = await modelCatalog(bridge.rpc)
+        const models = Object.fromEntries(rows.filter(m => !m.hidden).map(m => [m.model, { id: m.model, name: m.displayName, attachment: m.inputModalities?.includes('image') || false, reasoning: m.supportedReasoningEfforts?.length > 0, tool_call: true, limit: { context: 0, output: 0 }, variants: Object.fromEntries((m.supportedReasoningEfforts || []).map(v => [v.reasoningEffort, { reasoningEffort: v.reasoningEffort, description: v.description }])) }]))
         return { all: [{ id: 'codex', name: 'Codex', models }], default: {}, connected: ['codex'] }
       }
       if (route[0] === 'session' && route.length >= 2) {
         const state = await bridge.attach(route[1])
-        if (route.length === 2) return session(state.thread)
+        if (route.length === 2) return bridge.describe(state.thread)
         if (route[2] === 'message') return bridge.history(route[1], url.searchParams.has('limit') ? Math.max(1, Math.min(1000, Number(url.searchParams.get('limit')) || 50)) : undefined)
+        if (route[2] === 'codex' && route[3] === 'diff') return { diff: await bridge.diff(route[1]) }
         if (route[2] === 'diff') throw failure(501, 'Structured file diffs are not available for Codex; view the file-change tool output')
       }
     }
@@ -105,14 +106,16 @@ export function createGateway({ bridge, password, username = 'opencode', directo
     }
     if (route[0] === 'session' && route.length >= 2) {
       const id = route[1]
+      if (method === 'PATCH' && route[2] === 'codex') return bridge.updateSettings(id, await json(req))
+      if (method === 'POST' && route[2] === 'compact') return bridge.compact(id)
       if (method === 'PATCH' && route.length === 2) {
         const body = await json(req)
         if (body.time?.archived) throw failure(501, 'Archiving through this client is not supported yet')
         if (typeof body.title !== 'string' || !body.title.trim()) throw failure(400, 'A title is required')
         await bridge.rpc.call('thread/name/set', { threadId: id, name: body.title })
         const state = await bridge.attach(id); state.thread.name = body.title
-        bridge.event('session.updated', { info: session(state.thread) })
-        return session(state.thread)
+        bridge.event('session.updated', { info: bridge.describe(state.thread) })
+        return bridge.describe(state.thread)
       }
       if (method === 'POST' && route[2] === 'prompt_async') { await bridge.prompt(id, await json(req)); return {} }
       if (method === 'POST' && route[2] === 'abort') return bridge.abort(id)

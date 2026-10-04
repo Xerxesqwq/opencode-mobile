@@ -39,6 +39,9 @@ import { useEvents, refreshPending } from "../../src/stores/events"
 import { useConnections } from "../../src/stores/connections"
 import { useAuth } from "../../src/stores/auth"
 import { useCatalog } from "../../src/stores/catalog"
+import { CodexControls, type CodexTab } from "../../src/components/chat/CodexControls"
+import { codexError } from "../../src/lib/codex"
+import type { Session } from "../../src/lib/sdk"
 import { useSpeech } from "../../src/lib/speech"
 
 // --- Builtin slash commands ---
@@ -65,6 +68,12 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
     type: "builtin",
   },
 ]
+
+const CODEX_COMMANDS: SlashCommand[] = [
+  ["compact", "Compact context"], ["effort", "Reasoning effort"],
+  ["permissions", "Permissions"], ["status", "Codex status"],
+  ["context", "Context usage"], ["plan", "Plan / Default mode"],
+].map(([trigger, title]) => ({ trigger, title, icon: "options-outline", type: "builtin" }))
 
 function getShortDir(dir?: string): string | null {
   if (!dir) return null
@@ -119,6 +128,16 @@ export default function SessionScreen() {
 
   const { authenticateForMessage } = useAuth()
   const { client, clientForDirectory, activeConnection } = useConnections()
+
+  const isCodex = activeConnection?.backend === "codex"
+  const [codexTab, setCodexTab] = useState<CodexTab>("status")
+  const [showCodex, setShowCodex] = useState(false)
+  const openCodex = useCallback((tab: CodexTab) => {
+    Keyboard.dismiss(); setCodexTab(tab); setShowCodex(true)
+  }, [])
+  const updateCodexSession = useCallback((session: Session) => {
+    useSessions.getState().handleEvent({ type: "session.updated", properties: { info: session } })
+  }, [])
 
   // Use directory-aware client for sessions that belong to a project other than the active one
   const sessionClient = useMemo(
@@ -178,8 +197,8 @@ export default function SessionScreen() {
       icon: "code-slash-outline",
       type: "custom",
     }))
-    return [...custom, ...BUILTIN_COMMANDS]
-  }, [serverCommands])
+    return isCodex ? [...BUILTIN_COMMANDS.filter(command => command.trigger !== "agent"), ...CODEX_COMMANDS] : [...custom, ...BUILTIN_COMMANDS]
+  }, [serverCommands, isCodex])
 
   // While a revert is pending, the reverted message and everything after it
   // still exist server-side (cleanup only runs on the next prompt/unrevert)
@@ -290,7 +309,7 @@ export default function SessionScreen() {
 
   // Sync model chip from latest assistant message
   useEffect(() => {
-    if (!messages || messages.length === 0) return
+    if (isCodex || !messages || messages.length === 0) return
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i]
       if (msg.role === "assistant" && msg.providerID && msg.modelID) {
@@ -302,15 +321,28 @@ export default function SessionScreen() {
         return
       }
     }
-  }, [currentSession?.id, messages?.length])
+  }, [currentSession?.id, messages?.length, isCodex])
 
   // Slash command handler
   const handleSlashSelect = useCallback(
     (cmd: SlashCommand) => {
       if (cmd.type === "builtin") {
+        if (isCodex && CODEX_COMMANDS.some(command => command.trigger === cmd.trigger)) {
+          setInput("")
+          if (cmd.trigger === "compact") {
+            openCodex("status")
+            if (sessionClient && currentSession) void sessionClient.codex.compact(currentSession.id)
+              .then(updateCodexSession).catch(error => Alert.alert("Codex", codexError(error)))
+          } else openCodex(cmd.trigger === "effort" ? "effort" : cmd.trigger === "permissions" ? "permissions" : cmd.trigger === "plan" ? "mode" : "status")
+          return
+        }
         switch (cmd.trigger) {
           case "new":
-            router.back()
+            if (!isCodex) { router.back(); return }
+            setInput("")
+            void useSessions.getState().createSession().then(session => {
+              if (session) router.replace({ pathname: "/session/[id]", params: { id: session.id, directory: session.directory } })
+            }).catch(error => Alert.alert("Session", codexError(error)))
             return
           case "model":
             setInput("")
@@ -324,7 +356,7 @@ export default function SessionScreen() {
       }
       setInput(`/${cmd.trigger} `)
     },
-    [router, cycleAgent],
+    [router, cycleAgent, isCodex, openCodex, sessionClient, currentSession, updateCodexSession],
   )
 
   // --- Image picking ---
@@ -421,6 +453,8 @@ export default function SessionScreen() {
   // --- Send ---
   const handleSend = async () => {
     if (!input.trim() && attachments.length === 0) return
+    const builtin = attachments.length === 0 && isCodex ? allCommands.find(command => command.type === "builtin" && input.trim() === `/${command.trigger}`) : undefined
+    if (builtin) { handleSlashSelect(builtin); return }
     const authenticated = await authenticateForMessage()
     if (!authenticated) {
       Alert.alert(t("session.alerts.authRequiredTitle"), t("session.alerts.authRequiredMessage"))
@@ -453,7 +487,7 @@ export default function SessionScreen() {
     // Messages are queued server-side when the session is busy.
     // No need to abort - just send and it will be processed after current response.
     try {
-      await sendMessage(text, model || undefined, agent || undefined, files, variant || undefined)
+      await sendMessage(text, isCodex ? undefined : model || undefined, isCodex ? undefined : agent || undefined, files, isCodex ? undefined : variant || undefined)
     } catch (err) {
       console.error("Send failed:", err)
       // Restore the user's text and attachments so their input isn't lost.
@@ -561,15 +595,18 @@ export default function SessionScreen() {
 
   const handleModelSelect = useCallback(
     (providerID: string, modelID: string) => {
-      setModel({ providerID, modelID })
+      if (isCodex && sessionClient && currentSession) {
+        void sessionClient.codex.update(currentSession.id, { model: modelID }).then(updateCodexSession)
+          .catch(error => Alert.alert("Codex", codexError(error)))
+      } else setModel({ providerID, modelID })
     },
-    [setModel],
+    [setModel, isCodex, sessionClient, currentSession, updateCodexSession],
   )
 
   // Current agent display
   const currentAgent = agents.find((a) => a.name === agent)
   const agentColor = currentAgent?.color || "#8b5cf6"
-  const modelLabel = model?.modelID ? model.modelID.split("/").pop() || model.modelID : "default"
+  const modelLabel = isCodex ? currentSession?.codex?.model || "Codex" : model?.modelID ? model.modelID.split("/").pop() || model.modelID : "default"
 
   // Variants for current model (for reasoning effort picker)
   const currentModelVariants = useMemo(() => {
@@ -592,7 +629,7 @@ export default function SessionScreen() {
                   <Text style={[s.dirText, isDark && s.dirTextDark]}>{shortDir}</Text>
                 </View>
               )}
-              <TouchableOpacity onPress={() => setShowInfo((v) => !v)} hitSlop={8}>
+              <TouchableOpacity testID="codex-controls-button" onPress={() => isCodex ? openCodex("status") : setShowInfo((v) => !v)} hitSlop={8}>
                 <Ionicons
                   name={showInfo ? "stats-chart" : "stats-chart-outline"}
                   size={20}
@@ -767,11 +804,11 @@ export default function SessionScreen() {
           <View style={[s.toolbar, isDark && s.toolbarDark]}>
             <TouchableOpacity
               style={[s.agentChip, { borderColor: agentColor }]}
-              onPress={() => cycleAgent()}
-              onLongPress={() => cycleAgent(-1)}
+              onPress={() => isCodex ? openCodex("mode") : cycleAgent()}
+              onLongPress={() => isCodex ? openCodex("mode") : cycleAgent(-1)}
             >
               <View style={[s.agentDot, { backgroundColor: agentColor }]} />
-              <Text style={[s.agentLabel, isDark && s.textWhite]}>{agent || "build"}</Text>
+              <Text style={[s.agentLabel, isDark && s.textWhite]}>{isCodex ? currentSession?.codex?.mode || "default" : agent || "build"}</Text>
               <Ionicons name="swap-horizontal-outline" size={12} color={isDark ? "#888888" : "#666666"} />
             </TouchableOpacity>
 
@@ -786,7 +823,13 @@ export default function SessionScreen() {
               </Text>
             </TouchableOpacity>
 
-            {currentModelVariants && Object.keys(currentModelVariants).length > 0 && (
+            {isCodex && (
+              <TouchableOpacity style={[s.variantChip, isDark && s.variantChipDark]} onPress={() => openCodex("effort")} testID="codex-effort-chip">
+                <Ionicons name="flash-outline" size={14} color="#8b5cf6" />
+                <Text style={[s.variantLabel, isDark && s.metaDark]}>{currentSession?.codex?.effort || "default"}</Text>
+              </TouchableOpacity>
+            )}
+            {!isCodex && currentModelVariants && Object.keys(currentModelVariants).length > 0 && (
               <TouchableOpacity
                 style={[s.variantChip, isDark && s.variantChipDark, variant && s.variantChipActive]}
                 onPress={() => variantSheetRef.current?.expand()}
@@ -864,11 +907,14 @@ export default function SessionScreen() {
         </KeyboardAvoidingView>
       </View>
 
+      {isCodex && <CodexControls visible={showCodex} tab={codexTab} session={currentSession} client={sessionClient}
+        isDark={isDark} busy={isSending} onClose={() => setShowCodex(false)} onSession={updateCodexSession} />}
+
       {/* Model picker bottom sheet */}
       <ModelPicker
         sheetRef={modelSheetRef}
         providers={providers}
-        selected={model}
+        selected={isCodex && currentSession?.codex?.model ? { providerID: "codex", modelID: currentSession.codex.model } : model}
         isDark={isDark}
         onSelect={handleModelSelect}
       />

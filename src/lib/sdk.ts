@@ -8,6 +8,7 @@ import { SSEParser } from "./sse"
 import { apiErrorFor } from "./api-error"
 import { loadSessionList } from "./session-list"
 import type { FileRoot } from "./file-roots"
+import type { CodexSession, CodexOptions, CodexSettingsPatch, CodexLimits } from "./codex"
 
 export { ApiAuthError, isAuthError } from "./api-error"
 
@@ -21,6 +22,7 @@ export interface ClientConfig {
 }
 
 export interface Session {
+  codex?: CodexSession
   id: string
   slug: string
   projectID: string
@@ -307,6 +309,16 @@ export function createClient(config: ClientConfig) {
           reader.releaseLock()
         }
       },
+    },
+
+    codex: {
+      options: () => request<CodexOptions>(config, "/codex/options"),
+      limits: () => request<CodexLimits>(config, "/codex/limits"),
+      update: (id: string, patch: CodexSettingsPatch) => request<Session>(config, `/session/${id}/codex`, {
+        method: "PATCH", body: JSON.stringify(patch),
+      }),
+      compact: (id: string) => request<Session>(config, `/session/${id}/compact`, { method: "POST" }),
+      diff: (id: string) => request<{ diff: string }>(config, `/session/${id}/codex/diff`),
     },
 
     project: {

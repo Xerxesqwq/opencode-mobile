@@ -1,0 +1,16 @@
+{
+  "status": "success",
+  "sessionId": "01a105a9-95df-7c81-99a2-3a3916f27cdc",
+  "checks": [
+    "context",
+    "effort_high_max_low",
+    "permissions_read_only_workspace",
+    "approval_untrusted_on_request",
+    "plan_default",
+    "model_persistence",
+    "prompt_inherits_settings",
+    "slash_command",
+    "native_compact",
+    "app_reconnect"
+  ]
+}

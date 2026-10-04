@@ -222,5 +222,7 @@ Version 0.4.17 adds a **Codex** service choice when adding a connection. Run the
 [Codex gateway](server/codex/README.md) alongside your locally authenticated
 Codex daemon, put it behind HTTPS, and enter its URL and gateway credentials in
 the app. It supports existing and new sessions, streaming, interruptions, models,
-approvals and questions. See the gateway documentation for protocol requirements
-and supported operations.
+approvals and questions. Version 0.4.18 adds session controls for context compaction,
+reasoning effort, permission profiles, approval policy, plan/default mode, context
+usage and account limits. Open the chart icon in a chat header. See the gateway
+documentation for protocol requirements and supported operations.
