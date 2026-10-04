@@ -14,7 +14,7 @@ const request = async (route, body) => {
 }
 const rpc = new CodexRPC(process.env.CODEX_SOCKET || path.join(homedir(), '.codex/app-server-control/app-server-control.sock'))
 await rpc.connect()
-const created = await rpc.call('thread/start', { cwd: process.cwd(), sandbox: 'workspace-write', approvalPolicy: 'on-request' })
+const created = await rpc.call('thread/start', { model: 'gpt-6-luna', cwd: process.cwd(), sandbox: 'workspace-write', approvalPolicy: 'on-request' })
 const id = created.thread.id
 await rpc.call('thread/name/set', { threadId: id, name: 'Codex Mobile live takeover test' })
 console.log('Dedicated existing thread:', id)

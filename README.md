@@ -232,3 +232,7 @@ and a global task dashboard with task switching and stop controls.
 Version 0.4.20 adds full conversation forks and forks before a selected prompt,
 with inherited settings and editable drafts in the new branch. Conversations
 share the current working directory and files.
+
+Version 0.4.21 adds Fast/Standard speed selection under **Codex session → Mode**.
+`/fast` opens the same controls. Status shows the effective speed, and unsupported
+models disable Fast. Changes apply to subsequent turns of the current session.

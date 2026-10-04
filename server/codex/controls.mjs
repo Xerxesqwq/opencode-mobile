@@ -54,7 +54,8 @@ export async function controlOptions(rpc, cwd) {
   const allowed = requirements.requirements?.allowedApprovalPolicies
   return {
     models: models.map(m => ({ id: m.model, name: m.displayName,
-      efforts: m.supportedReasoningEfforts, defaultEffort: m.defaultReasoningEffort })),
+      efforts: m.supportedReasoningEfforts, defaultEffort: m.defaultReasoningEffort,
+      serviceTiers: m.serviceTiers ?? [] })),
     permissionProfiles: profiles.data,
     approvalPolicies: ['untrusted', 'on-request', 'never'].filter(policy => !allowed || allowed.includes(policy)),
     modes: modes.data.filter(mode => ['default', 'plan'].includes(mode.mode)).map(mode => mode.mode),
@@ -64,8 +65,8 @@ export async function controlOptions(rpc, cwd) {
 export async function settingsPatch(rpc, state, body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail(400, 'A settings object is required')
   const keys = Object.keys(body)
-  if (!keys.length || keys.some(key => !['model', 'effort', 'approvalPolicy', 'permissions', 'mode'].includes(key))) {
-    throw fail(400, 'Choose model, reasoning effort, permissions, approval policy or mode')
+  if (!keys.length || keys.some(key => !['model', 'effort', 'approvalPolicy', 'permissions', 'mode', 'serviceTier'].includes(key))) {
+    throw fail(400, 'Choose model, reasoning effort, permissions, approval policy, mode or service tier')
   }
   if (state.thread.canAcceptDirectInput === false) throw fail(409, 'This thread does not accept direct input')
   const options = await controlOptions(rpc, state.thread.cwd)
@@ -74,6 +75,16 @@ export async function settingsPatch(rpc, state, body) {
   const params = { threadId: state.thread.id }
   if ('model' in body && !model) throw fail(400, 'Choose an available Codex model')
   if ('model' in body) params.model = model.id
+  if ('serviceTier' in body) {
+    if (body.serviceTier !== null && (!['priority', 'fast'].includes(body.serviceTier) ||
+      !model?.serviceTiers.some(tier => tier.id === body.serviceTier))) {
+      throw fail(400, 'Fast mode is not supported by this model')
+    }
+    params.serviceTier = body.serviceTier
+  } else if ('model' in body && state.settings?.serviceTier && state.settings.serviceTier !== 'default' &&
+    !model.serviceTiers.some(tier => tier.id === state.settings.serviceTier)) {
+    params.serviceTier = null
+  }
   if ('effort' in body) {
     const effort = body.effort === 'default' ? model?.defaultEffort : body.effort
     if (!model?.efforts.some(option => option.reasoningEffort === effort)) throw fail(400, 'Reasoning effort is not supported by this model')

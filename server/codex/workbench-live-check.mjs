@@ -46,6 +46,7 @@ const prompt = async (id, text) => {
 try {
   const title = `Workbench ${Date.now()}`
   const source = await request('/session', { title })
+  await bridge.updateSettings(source.id, { model: 'gpt-6-luna', effort: 'low' })
   const first = await prompt(source.id, 'Use apply_patch to create a.py with exactly two lines: # WORKBENCH_OLD_MARKER and print("alpha"). Create b.py containing print("beta"). Work only in this directory. Reply FILES_READY.')
   const secondText = 'Reply exactly WORKBENCH_RETRY_MARKER. Do not use tools.'
   const second = await prompt(source.id, secondText)
@@ -67,7 +68,7 @@ try {
   assert(ids.every(id => archived.some(row => row.id === id)))
   assert((await request('/codex/archive', { ids, archived: false })).results.every(row => row.ok))
   const runner = await request('/session', { title: title + ' active task' })
-  await rpc.call('turn/start', { threadId: runner.id, input: [{ type: 'text', text: 'Run sleep 45 once, then reply DONE. Do not change files.', text_elements: [] }] })
+  await rpc.call('turn/start', { threadId: runner.id, model: 'gpt-6-luna', input: [{ type: 'text', text: 'Run sleep 45 once, then reply DONE. Do not change files.', text_elements: [] }] })
   await waitFor(async () => (await rpc.call('thread/read', { threadId: runner.id, includeTurns: false })).thread.status.type === 'active')
   const tasks = await request('/codex/tasks')
   assert.equal(tasks.items.find(item => item.session.id === runner.id)?.state, 'running')

@@ -77,6 +77,7 @@ const CODEX_COMMANDS: SlashCommand[] = [
   ["compact", "Compact context"], ["effort", "Reasoning effort"],
   ["permissions", "Permissions"], ["status", "Codex status"],
   ["context", "Context usage"], ["plan", "Plan / Default mode"],
+  ["fast", "Fast / Standard speed"],
 ].map(([trigger, title]) => ({ trigger, title, icon: "options-outline", type: "builtin" }))
 
 function getShortDir(dir?: string): string | null {
@@ -423,7 +424,7 @@ export default function SessionScreen() {
             openCodex("status")
             if (sessionClient && currentSession) void sessionClient.codex.compact(currentSession.id)
               .then(updateCodexSession).catch(error => Alert.alert("Codex", codexError(error)))
-          } else openCodex(cmd.trigger === "effort" ? "effort" : cmd.trigger === "permissions" ? "permissions" : cmd.trigger === "plan" ? "mode" : "status")
+          } else openCodex(cmd.trigger === "effort" ? "effort" : cmd.trigger === "permissions" ? "permissions" : ["plan", "fast"].includes(cmd.trigger) ? "mode" : "status")
           return
         }
         switch (cmd.trigger) {

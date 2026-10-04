@@ -1,0 +1,3 @@
+v0.4.21
+
+Add Fast and Standard speed controls for Codex sessions. Open Mode or /fast to switch; effective speed is shown in Status. Preserve settings across reconnects and validate model support.

@@ -25,7 +25,7 @@ export interface CodexSession {
 }
 
 export interface CodexOptions {
-  models: Array<{ id: string; name: string; efforts: Array<{ reasoningEffort: string; description: string }>; defaultEffort: string }>
+  models: Array<{ id: string; name: string; efforts: Array<{ reasoningEffort: string; description: string }>; defaultEffort: string; serviceTiers?: Array<{ id: string; name: string; description: string }> }>
   permissionProfiles: Array<{ id: string; description: string | null; allowed: boolean }>
   approvalPolicies: string[]
   modes: string[]
@@ -37,6 +37,7 @@ export interface CodexSettingsPatch {
   approvalPolicy?: string
   permissions?: string
   mode?: string
+  serviceTier?: 'priority' | 'fast' | null
 }
 
 export interface CodexRateLimit {

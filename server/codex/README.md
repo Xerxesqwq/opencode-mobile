@@ -85,7 +85,7 @@ Forward the router's external port to this Caddy listener and permit it in the h
 
 ## Android
 
-Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Use the search and file icons in the chat header for history search and file review. Tap the rewind button on a user message, or long-press its header, to back up and rewind from that prompt. The branch icon forks before that prompt and restores it as a draft in the new branch. The status panel also offers a full conversation fork. Forking is available after the current task finishes. The session screen opens the task dashboard and session organizer. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/model` and `/new` run locally or open the matching controls.
+Add a connection, select **Codex**, enter the HTTPS URL, username `opencode`, and the gateway password. Choose a directory for new sessions. The session list includes existing directories automatically. Open the chart icon in a chat header for the Codex control panel. The toolbar also opens model, effort and mode selection. Use the search and file icons in the chat header for history search and file review. Tap the rewind button on a user message, or long-press its header, to back up and rewind from that prompt. The branch icon forks before that prompt and restores it as a draft in the new branch. The status panel also offers a full conversation fork. Forking is available after the current task finishes. The session screen opens the task dashboard and session organizer. Commands `/compact`, `/effort`, `/permissions`, `/status`, `/context`, `/plan`, `/fast`, `/model` and `/new` run locally or open the matching controls.
 
 Context uses the native `last.totalTokens` and `modelContextWindow`; cached input and reasoning output are subsets, not additional tokens. Codex 0.160 metadata-only resume omits usage replay for loaded threads. The gateway restores the latest token-count record from at most the last 8 MiB of the daemon-provided rollout, restricted to the daemon's state directory. It returns only token counts; live notifications supersede the restored snapshot. If no snapshot is available, the panel waits for the next native usage event.
 
@@ -109,3 +109,23 @@ CODEX_GATEWAY_USERNAME=opencode \
 CODEX_GATEWAY_PASSWORD_FILE="$HOME/.config/opencode-codex/password" \
 node live-check.mjs
 ```
+
+### Fast mode
+
+Gateway 0.5.0 exposes each model's native `serviceTiers` in `/codex/options`.
+PATCH `/session/:id/codex` with `{"serviceTier":"priority"}` enables Fast when
+that tier appears in the selected model's catalog. `{"serviceTier":null}` clears
+the tier; Codex 0.160 reports Standard as `default`. Omission preserves the current
+setting. Model changes clear an incompatible tier. Native settings notifications
+confirm the result; the Mode and Status panels show that effective value.
+
+Run opt-in checks with Luna to limit cost. The native scripts select `gpt-6-luna`,
+and the Android model-switch check chooses another Luna model. Fast validation:
+
+```sh
+CODEX_FAST_REPORT=/absolute/path/report.json node fast-live-check.mjs
+```
+
+The check deletes its fixture by default. Set `CODEX_FAST_KEEP_FIXTURE=1` only
+when following with `scripts/check-codex-fast.py` or the `codex_fast` CUA scenario;
+delete that exact report's thread through `thread/delete` after UI verification.

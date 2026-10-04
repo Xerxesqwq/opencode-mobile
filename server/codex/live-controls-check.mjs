@@ -21,7 +21,7 @@ try {
   const session = await bridge.create(process.cwd(), `Codex controls test ${Math.floor(Date.now() / 1000)}`)
   const id = session.id
   console.log('Dedicated test session:', id)
-  let current = await bridge.updateSettings(id, { effort: 'high' })
+  let current = await bridge.updateSettings(id, { model: 'gpt-6-luna', effort: 'high' })
   assert.equal(current.codex.effort, 'high')
   console.log('PASS: reasoning effort saved and read back')
   current = await bridge.updateSettings(id, { permissions: ':read-only' })

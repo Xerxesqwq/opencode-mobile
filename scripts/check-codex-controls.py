@@ -113,7 +113,7 @@ click('codex-controls-close')
 # Model selection persists on the native session and the next prompt inherits it.
 original_model = session()['codex']['model']
 models = api('/codex/options')['models']
-target = next(model['id'] for model in models if model['id'] != original_model and any(e['reasoningEffort'] == 'max' for e in model['efforts']))
+target = next(model['id'] for model in models if model['id'] != original_model and 'luna' in model['id'] and any(e['reasoningEffort'] == 'max' for e in model['efforts']))
 click('model-chip')
 reveal('model-option-codex-' + target)
 click('model-option-codex-' + target)

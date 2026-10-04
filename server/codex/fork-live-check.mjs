@@ -46,7 +46,7 @@ const prompt = async (id, text) => {
 try {
   const title = `Fork check ${Date.now()}`
   const source = await request('/session', { title })
-  await bridge.updateSettings(source.id, { effort: 'low', permissions: ':read-only', approvalPolicy: 'untrusted', mode: 'plan' })
+  await bridge.updateSettings(source.id, { model: 'gpt-6-luna', effort: 'low', permissions: ':read-only', approvalPolicy: 'untrusted', mode: 'plan' })
   const first = await prompt(source.id, 'Reply exactly FORK_FIRST. Do not use tools.')
   const second = await prompt(source.id, 'Reply exactly FORK_SECOND. Do not use tools.')
   await writeFile(path.join(cwd, 'sentinel.txt'), 'Shared files stay unchanged.\n')

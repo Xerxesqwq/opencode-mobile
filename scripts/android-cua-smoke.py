@@ -1713,6 +1713,16 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_codex_fast():
+    """Verify native Fast/Standard controls using only a Luna test thread."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-fast")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-fast.py")),
+        "--output-dir", str(output),
+    ], timeout=300, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def run_scenario_codex_fork():
     """Verify full and selected-prompt forks against a dedicated native fixture."""
     output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-fork")).resolve()
@@ -2090,6 +2100,7 @@ Examples:
             "codex_direct": run_scenario_codex_direct,
             "codex_workbench": run_scenario_codex_workbench,
             "codex_fork": run_scenario_codex_fork,
+            "codex_fast": run_scenario_codex_fast,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(

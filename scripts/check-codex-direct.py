@@ -34,8 +34,8 @@ headers = {'Authorization': 'Basic ' + base64.b64encode((username + ':' + passwo
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def api(route, body=None):
-    request = urllib.request.Request(base + route, data=json.dumps(body).encode() if body is not None else None, headers=headers)
+def api(route, body=None, method=None):
+    request = urllib.request.Request(base + route, method=method, data=json.dumps(body).encode() if body is not None else None, headers=headers)
     with opener.open(request, timeout=30) as response:
         return json.load(response)
 
@@ -51,6 +51,7 @@ def wait_reply(identifier, text):
 
 title = 'Codex Android ' + str(int(time.time()))
 seed = api('/session', {'title': title})
+api('/session/' + seed['id'] + '/codex', {'model': 'gpt-6-luna', 'effort': 'low'}, method='PATCH')
 api('/session/' + seed['id'] + '/prompt_async', {'parts': [{'type': 'text', 'text': 'Reply exactly ANDROID_HISTORY_OK. Do not use tools or change files.'}]})
 wait_reply(seed['id'], 'ANDROID_HISTORY_OK')
 d = uiautomator2.connect()

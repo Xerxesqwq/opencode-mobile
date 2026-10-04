@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "model": "gpt-6-luna",
+  "checks": [
+    "Fast on",
+    "status display",
+    "app restart persistence",
+    "Luna reply in Fast",
+    "/fast opens controls without inference",
+    "Standard off",
+    "settings preserved"
+  ]
+}

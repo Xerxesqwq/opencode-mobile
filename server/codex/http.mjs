@@ -68,7 +68,7 @@ export function createGateway({ bridge, password, username = 'opencode', directo
   }
   async function dispatch(method, url, route, req, cwd, init) {
     if (method === 'GET') {
-      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.4.0', backend: 'codex', codex: init.userAgent }
+      if (url.pathname === '/global/health') return { healthy: true, version: 'codex-gateway/0.5.0', backend: 'codex', codex: init.userAgent }
       if (url.pathname === '/path') return { home: homedir(), state: init.codexHome, config: init.codexHome, worktree: cwd, directory: cwd }
       if (url.pathname === '/project/current') return project(cwd)
       if (url.pathname === '/project') return [...new Set((await bridge.list()).map(t => t.cwd))].map(project)

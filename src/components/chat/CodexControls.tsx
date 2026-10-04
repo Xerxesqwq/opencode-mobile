@@ -39,6 +39,10 @@ export function CodexControls({ visible, tab: initialTab, session, client, isDar
   const muted = isDark ? "#aaaaaa" : "#666666"
   const cardColor = isDark ? "#252525" : "#f2f3f5"
   const selectedModel = options?.models.find(model => model.id === control?.model)
+  const fastTier = selectedModel?.serviceTiers?.find(tier => tier.id === 'priority' || tier.id === 'fast')
+  const fast = control?.serviceTier === 'priority' || control?.serviceTier === 'fast'
+  const standard = !control?.serviceTier || control.serviceTier === 'default'
+  const speed = fast ? 'Fast' : standard ? tr('标准', 'Standard') : control.serviceTier!
   const locked = pending || !control?.canAcceptDirectInput
 
   useEffect(() => { if (visible) setTab(initialTab) }, [visible, initialTab])
@@ -125,6 +129,7 @@ export function CodexControls({ visible, tab: initialTab, session, client, isDar
             <Text style={[s.description, { color: muted }]}>{tr('保留原会话，在新分支继续；两个会话共用工作目录和文件。运行中的任务结束后可用。', 'Keep the original conversation and continue in a new branch. Both sessions share the directory and files. Available after the current turn finishes.')}</Text>
             {heading(tr('当前设置', 'Current settings'))}
             {line(tr('模型', 'Model'), control?.model || '—', 'codex-current-model')}
+            {line(tr('速度', 'Speed'), speed, 'codex-current-speed')}
             {line(tr('推理强度', 'Reasoning effort'), control?.effort || tr('模型默认', 'Model default'), 'codex-current-effort')}
             {line(tr('权限', 'Permissions'), profileNames[control?.permissionProfile || ''] || control?.permissionProfile || control?.sandboxPolicy?.type || '—')}
             {line(tr('审批', 'Approvals'), typeof control?.approvalPolicy === 'string' ? approvalNames[control.approvalPolicy] || control.approvalPolicy : tr('自定义', 'Custom'))}
@@ -193,6 +198,14 @@ export function CodexControls({ visible, tab: initialTab, session, client, isDar
             {!!control?.sandboxPolicy?.writableRoots?.length && <Text selectable style={{ color: muted }}>{control.sandboxPolicy.writableRoots.join('\n')}</Text>}
           </>}
           {tab === 'mode' && <>
+            {heading(tr('速度', 'Speed'))}
+            {line(tr('当前速度', 'Current speed'), speed, 'codex-speed-value')}
+            <Text style={{ color: muted }}>{tr('设置保存到当前会话，从下一轮开始生效。Fast 会增加额度消耗。', 'Saved to this session for subsequent turns. Fast uses more of your allowance.')}</Text>
+            {choice('codex-speed-standard', tr('标准 · 关闭 Fast', 'Standard · Fast off'), '', standard,
+              () => update({ serviceTier: null }))}
+            {choice('codex-speed-fast', tr('Fast · 开启', 'Fast · On'), '', fast,
+              () => { if (fastTier) update({ serviceTier: fastTier.id as 'priority' | 'fast' }) }, !fastTier)}
+            {!loading && !fastTier && <Text style={{ color: muted }}>{tr('当前模型或服务端暂未提供 Fast。', 'Fast is unavailable for this model or server.')}</Text>}
             {heading(tr('协作模式', 'Collaboration mode'))}
             {options?.modes.map(mode => choice(`codex-mode-${mode}`, mode === 'plan' ? tr('计划', 'Plan') : tr('执行', 'Default'),
               mode === 'plan' ? tr('先分析并制定计划。', 'Analyze the task and prepare a plan.') : tr('按照当前权限执行任务。', 'Carry out tasks under the current permissions.'),
