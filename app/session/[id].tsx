@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   useColorScheme,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -79,6 +80,16 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets()
   const keyboardContainerRef = useRef<View>(null)
   const [keyboardOffset, setKeyboardOffset] = useState(0)
+  const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible())
+  useEffect(() => {
+    if (Platform.OS !== "android") return
+    const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true))
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false))
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
   const { t } = useTranslation()
 
   const flatListRef = useRef<FlatList>(null)
@@ -614,6 +625,9 @@ export default function SessionScreen() {
           // header. Include the measured screen offset (including the status bar), or
           // the composer remains covered by that amount when Gboard opens.
           behavior="padding"
+          // Android's hide event still carries window coordinates. Calculating
+          // avoidance from them can leave padding after the IME is dismissed.
+          enabled={Platform.OS !== "android" || keyboardVisible}
           keyboardVerticalOffset={keyboardOffset}
         >
           {/* Session info pulldown */}

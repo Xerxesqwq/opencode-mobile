@@ -1,0 +1,233 @@
+{
+  "ime": "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME",
+  "density": 1.75,
+  "baseline": {
+    "label": "initial",
+    "controls": {
+      "chat-message-input": [
+        147,
+        1443,
+        615,
+        1516
+      ]
+    },
+    "keyboardTop": null
+  },
+  "cycles": [
+    {
+      "open": {
+        "label": "open-1",
+        "controls": {
+          "chat-message-input": [
+            147,
+            855,
+            615,
+            928
+          ],
+          "chat-send-button": [
+            629,
+            858,
+            699,
+            928
+          ]
+        },
+        "keyboardTop": 1012,
+        "gapBelowControlsDp": 48.0
+      },
+      "closed": {
+        "label": "closed-1",
+        "controls": {
+          "chat-message-input": [
+            147,
+            1443,
+            615,
+            1516
+          ],
+          "chat-send-button": [
+            629,
+            1446,
+            699,
+            1516
+          ]
+        },
+        "keyboardTop": null,
+        "extraGapDp": 0.0
+      }
+    },
+    {
+      "open": {
+        "label": "open-2",
+        "controls": {
+          "chat-message-input": [
+            147,
+            789,
+            615,
+            928
+          ],
+          "chat-send-button": [
+            629,
+            858,
+            699,
+            928
+          ]
+        },
+        "keyboardTop": 1012,
+        "gapBelowControlsDp": 48.0
+      },
+      "closed": {
+        "label": "closed-2",
+        "controls": {
+          "chat-message-input": [
+            147,
+            1377,
+            615,
+            1516
+          ],
+          "chat-send-button": [
+            629,
+            1446,
+            699,
+            1516
+          ]
+        },
+        "keyboardTop": null,
+        "extraGapDp": 0.0
+      }
+    },
+    {
+      "open": {
+        "label": "open-3",
+        "controls": {
+          "chat-message-input": [
+            147,
+            789,
+            615,
+            928
+          ],
+          "chat-send-button": [
+            629,
+            858,
+            699,
+            928
+          ]
+        },
+        "keyboardTop": 1012,
+        "gapBelowControlsDp": 48.0
+      },
+      "closed": {
+        "label": "closed-3",
+        "controls": {
+          "chat-message-input": [
+            147,
+            1377,
+            615,
+            1516
+          ],
+          "chat-send-button": [
+            629,
+            1446,
+            699,
+            1516
+          ]
+        },
+        "keyboardTop": null,
+        "extraGapDp": 0.0
+      }
+    },
+    {
+      "open": {
+        "label": "open-4",
+        "controls": {
+          "chat-message-input": [
+            147,
+            789,
+            615,
+            928
+          ],
+          "chat-send-button": [
+            629,
+            858,
+            699,
+            928
+          ]
+        },
+        "keyboardTop": 1012,
+        "gapBelowControlsDp": 48.0
+      },
+      "closed": {
+        "label": "closed-4",
+        "controls": {
+          "chat-message-input": [
+            147,
+            1377,
+            615,
+            1516
+          ],
+          "chat-send-button": [
+            629,
+            1446,
+            699,
+            1516
+          ]
+        },
+        "keyboardTop": null,
+        "extraGapDp": 0.0
+      }
+    },
+    {
+      "open": {
+        "label": "open-5",
+        "controls": {
+          "chat-message-input": [
+            147,
+            789,
+            615,
+            928
+          ],
+          "chat-send-button": [
+            629,
+            858,
+            699,
+            928
+          ]
+        },
+        "keyboardTop": 1012,
+        "gapBelowControlsDp": 48.0
+      },
+      "closed": {
+        "label": "closed-5",
+        "controls": {
+          "chat-message-input": [
+            147,
+            1377,
+            615,
+            1516
+          ],
+          "chat-send-button": [
+            629,
+            1446,
+            699,
+            1516
+          ]
+        },
+        "keyboardTop": null,
+        "extraGapDp": 0.0
+      }
+    }
+  ],
+  "passed": true,
+  "sentDraft": "Keyboard restoration test\nSecond line\nThird line",
+  "afterSend": {
+    "label": "after-send",
+    "controls": {
+      "chat-message-input": [
+        147,
+        1443,
+        615,
+        1516
+      ]
+    },
+    "keyboardTop": null,
+    "extraGapDp": 0.0
+  }
+}

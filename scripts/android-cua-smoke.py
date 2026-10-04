@@ -1713,6 +1713,20 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_keyboard_restoration():
+    """Measure real IME cycles in a chat connected to the seeded mock server.
+
+    Requires Gboard and uiautomator2; does not require a vision API key.
+    Screenshots, UI XML and Android window frames are always recorded.
+    """
+    output = Path(os.environ.get("ANDROID_KEYBOARD_OUTPUT_DIR", "verification/keyboard-restoration")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-keyboard-restoration.py")),
+        "--output-dir", str(output), "--cycles", "5", "--multiline", "--send",
+    ], timeout=240, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="OpenCode Mobile Android CUA smoke test — full onboarding showcase",
@@ -1789,7 +1803,7 @@ Examples:
         "--scenarios",
         help="Comma-separated scenario names to run (disables showcase). "
              "LLM scenarios: connect_and_verify_sessions, coding_task, verify_session_list. "
-             "Deterministic (ADB-based): sse_disconnect_banner, backgrounded_permission_notification.",
+             "Deterministic (ADB-based): sse_disconnect_banner, backgrounded_permission_notification, keyboard_restoration.",
     )
     parser.add_argument(
         "--skip-connect-scenario", action="store_true",
@@ -2042,6 +2056,7 @@ Examples:
     if args.scenarios:
         # Deterministic feature scenarios (run as functions, not LLM-goal strings)
         deterministic_catalog = {
+            "keyboard_restoration": run_scenario_keyboard_restoration,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(

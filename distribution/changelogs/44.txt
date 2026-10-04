@@ -1,0 +1,3 @@
+v0.4.16 — Restore the chat layout after closing the Android keyboard
+
+Reset keyboard avoidance when the keyboard closes, removing the extra blank area below the composer. Keep the Gboard overlap fix and updated launcher icon.
