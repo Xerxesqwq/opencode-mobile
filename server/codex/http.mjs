@@ -23,7 +23,7 @@ async function json(req) {
 }
 
 export function createGateway({ bridge, password, username = 'opencode', directory = homedir(), tls }) {
-  if (!password || password.length < 20) throw new Error('Set a gateway password of at least 20 characters')
+  if (!password || password.length < 16) throw new Error('Set a gateway password of at least 16 characters')
   const credentials = hash(`Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`)
   const streams = new Set()
   const publish = event => {

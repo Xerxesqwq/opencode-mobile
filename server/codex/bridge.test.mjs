@@ -102,7 +102,9 @@ test('rejects unsupported attachments before starting a turn', () => {
 
 test('HTTP authentication, origin rejection, history, and unsupported mutation', async t => {
   const { rpc, bridge } = fixture()
-  const password = 'a-long-test-password-123456'
+  const password = Buffer.from('0123456789').toString('base64')
+  assert.equal(password.length, 16)
+  assert.throws(() => createGateway({ bridge, password: 'x'.repeat(15) }), /at least 16 characters/)
   const server = createGateway({ bridge, password })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => { server.closeAllConnections(); server.close() })

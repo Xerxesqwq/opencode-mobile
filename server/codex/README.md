@@ -36,7 +36,7 @@ Create a private password file once:
 
 ```sh
 install -d -m 700 "$HOME/.config/opencode-codex"
-(umask 077; openssl rand -base64 32 > "$HOME/.config/opencode-codex/password")
+(umask 077; openssl rand -base64 10 > "$HOME/.config/opencode-codex/password")
 export CODEX_GATEWAY_PASSWORD_FILE="$HOME/.config/opencode-codex/password"
 export CODEX_GATEWAY_DIRECTORY="$HOME"
 node main.mjs
@@ -51,7 +51,7 @@ Environment variables:
 | Variable | Purpose |
 | --- | --- |
 | `CODEX_SOCKET` | Override the existing daemon's absolute Unix socket path |
-| `CODEX_GATEWAY_PASSWORD_FILE` | Required password file, at least 20 characters |
+| `CODEX_GATEWAY_PASSWORD_FILE` | Required password file, at least 16 characters |
 | `CODEX_GATEWAY_USERNAME` | Basic-auth username, defaults to `opencode` |
 | `CODEX_GATEWAY_DIRECTORY` | Starting directory for new sessions and browsing |
 | `CODEX_GATEWAY_HOST` / `CODEX_GATEWAY_PORT` | Listener, defaults to `127.0.0.1:4098` |
