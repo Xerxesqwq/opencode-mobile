@@ -1,0 +1,8 @@
+{
+  "clientTests": 338,
+  "gatewayTests": 25,
+  "typecheck": "passed",
+  "versionParity": "0.4.19 (47)",
+  "runtimeDependencyVulnerabilities": 0,
+  "nativeProtocol": "0.160.0"
+}

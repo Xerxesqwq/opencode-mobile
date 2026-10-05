@@ -1,0 +1,6 @@
+v0.4.18 — Codex session controls
+
+- Compact context and inspect token usage.
+- Change reasoning effort, model, permissions, approval policy, and plan/default mode.
+- Show native settings, usage limits, task plans, and recent file diffs.
+- Preserve server settings when continuing existing sessions.

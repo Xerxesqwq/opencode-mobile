@@ -1,3 +1,5 @@
+import { queueCodexDraft, takeCodexDraft } from "../../src/lib/codex-drafts"
+import { hasMessageContent } from "../../src/lib/message-content"
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import {
   View,
@@ -39,6 +41,12 @@ import { useEvents, refreshPending } from "../../src/stores/events"
 import { useConnections } from "../../src/stores/connections"
 import { useAuth } from "../../src/stores/auth"
 import { useCatalog } from "../../src/stores/catalog"
+import { CodexSearch } from "../../src/components/chat/CodexSearch"
+import { CodexFiles } from "../../src/components/chat/CodexFiles"
+import type { CodexSearchResult } from "../../src/lib/codex"
+import { CodexControls, type CodexTab } from "../../src/components/chat/CodexControls"
+import { codexError } from "../../src/lib/codex"
+import type { Session, Message, Part } from "../../src/lib/sdk"
 import { useSpeech } from "../../src/lib/speech"
 
 // --- Builtin slash commands ---
@@ -66,11 +74,21 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   },
 ]
 
+const CODEX_COMMANDS: SlashCommand[] = [
+  ["compact", "Compact context"], ["effort", "Reasoning effort"],
+  ["permissions", "Permissions"], ["status", "Codex status"],
+  ["context", "Context usage"], ["plan", "Plan / Default mode"],
+  ["fast", "Fast / Standard speed"],
+].map(([trigger, title]) => ({ trigger, title, icon: "options-outline", type: "builtin" }))
+
 function getShortDir(dir?: string): string | null {
   if (!dir) return null
   const parts = dir.split("/").filter(Boolean)
   return parts[parts.length - 1] || null
 }
+
+const EMPTY_MESSAGES: Message[] = []
+const EMPTY_PARTS: Record<string, Part[]> = {}
 
 export default function SessionScreen() {
   const { id, directory } = useLocalSearchParams<{ id: string; directory?: string }>()
@@ -90,7 +108,8 @@ export default function SessionScreen() {
       hide.remove()
     }
   }, [])
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const zh = i18n.language.startsWith("zh")
 
   const flatListRef = useRef<FlatList>(null)
   const modelSheetRef = useRef<BottomSheet>(null)
@@ -98,27 +117,66 @@ export default function SessionScreen() {
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [showInfo, setShowInfo] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)
+  const [searchJump, setSearchJump] = useState(0)
+  const [targetMessage, setTargetMessage] = useState<string | null>(null)
+  const [forkingCodex, setForkingCodex] = useState(false)
+  const forkingRef = useRef(false)
+  const creatingRef = useRef(false)
+  const [revertingCodex, setRevertingCodex] = useState(false)
+  const revertingRef = useRef(false)
+  const jumpRetries = useRef(0)
 
   const {
-    currentSession,
-    messages,
-    parts,
-    isLoading,
-    loadingMore,
-    hasMore,
+    currentSession: loadedSession,
+    messages: loadedMessages,
+    parts: loadedParts,
+    selectedSessionID,
+    selectedConnectionID,
+    sessionLoading,
+    sessionError,
+    sessions,
+    loadingMore: loadedMore,
+    hasMore: loadedHasMore,
     selectSession,
     sendMessage,
     abortSession,
-    loadOlderMessages,
+    loadOlderMessages: loadOlder,
     revertToMessage,
     unrevertSession,
   } = useSessions()
 
-  // Derive sending state for this specific session
-  const isSending = useSessions((s) => !!(currentSession && s.sending[currentSession.id]))
-
   const { authenticateForMessage } = useAuth()
-  const { client, clientForDirectory } = useConnections()
+  const { client, clientForDirectory, activeConnection } = useConnections()
+  const matchesRoute = selectedSessionID === id && selectedConnectionID === (activeConnection?.id ?? null)
+  const currentSession = matchesRoute && loadedSession?.id === id ? loadedSession : null
+  const messages = currentSession ? loadedMessages : EMPTY_MESSAGES
+  const parts = currentSession ? loadedParts : EMPTY_PARTS
+  const isLoading = !matchesRoute || sessionLoading
+  const loadError = matchesRoute ? sessionError : null
+  const ready = !!currentSession && !isLoading
+  const hasMore = ready && loadedHasMore, loadingMore = ready && loadedMore
+  const routeTitle = sessions.find(session => session.id === id)?.title
+  const focused = useRef(false)
+  const ownsSession = useCallback(() => {
+    const state = useSessions.getState()
+    return focused.current && state.currentSession?.id === id && state.selectedSessionID === id
+      && state.selectedConnectionID === (useConnections.getState().activeConnection?.id ?? null) && !state.sessionLoading
+  }, [id])
+  const loadOlderMessages = useCallback(async () => { if (ownsSession()) await loadOlder() }, [ownsSession, loadOlder])
+  const isSending = useSessions((state) => ready && !!state.sending[id])
+
+  const isCodex = activeConnection?.backend === "codex"
+  const [codexTab, setCodexTab] = useState<CodexTab>("status")
+  const [showCodex, setShowCodex] = useState(false)
+  const openCodex = useCallback((tab: CodexTab) => {
+    if (!ownsSession()) return
+    Keyboard.dismiss(); setCodexTab(tab); setShowCodex(true)
+  }, [ownsSession])
+  const updateCodexSession = useCallback((session: Session) => {
+    useSessions.getState().handleEvent({ type: "session.updated", properties: { info: session } })
+  }, [])
 
   // Use directory-aware client for sessions that belong to a project other than the active one
   const sessionClient = useMemo(
@@ -178,8 +236,11 @@ export default function SessionScreen() {
       icon: "code-slash-outline",
       type: "custom",
     }))
-    return [...custom, ...BUILTIN_COMMANDS]
-  }, [serverCommands])
+    return isCodex ? [...BUILTIN_COMMANDS.filter(command => command.trigger !== "agent"), {
+      trigger: "clear", title: "Clear context", description: "Start fresh in this directory; keep the previous conversation",
+      icon: "refresh-outline", type: "builtin",
+    }, ...CODEX_COMMANDS] : [...custom, ...BUILTIN_COMMANDS]
+  }, [serverCommands, isCodex])
 
   // While a revert is pending, the reverted message and everything after it
   // still exist server-side (cleanup only runs on the next prompt/unrevert)
@@ -199,16 +260,69 @@ export default function SessionScreen() {
           message: msg,
           parts: (parts && parts[msg.id]) || [],
         }))
+        .filter(row => hasMessageContent(row.message, row.parts))
         .reverse(),
     [messages, parts, revertMessageID],
   )
+
+  const locateMessage = useCallback(async (result: CodexSearchResult) => {
+    setShowSearch(false)
+    if (!useSessions.getState().messages.some(message => message.id === result.messageId)) await loadOlderMessages()
+    if (!useSessions.getState().messages.some(message => message.id === result.messageId)) {
+      Alert.alert(zh ? "消息已改变" : "Message changed", zh ? "请刷新搜索结果后重试。" : "Refresh search results and try again.")
+      return
+    }
+    jumpRetries.current = 0; setTargetMessage(result.messageId); setSearchJump(value => value + 1)
+  }, [loadOlderMessages, zh])
+  useEffect(() => {
+    if (!targetMessage) return
+    const index = messageData.findIndex(row => row.message.id === targetMessage)
+    if (index >= 0) {
+      const timer = setTimeout(() => flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 250)
+      return () => clearTimeout(timer)
+    }
+  }, [targetMessage, messageData.length, searchJump])
 
   // Tracks the latest composer text without pulling `input` into
   // handleMessageLongPress's deps — kept as a plain ref assignment (not
   // state) so the callback below stays referentially stable across
   // keystrokes for MessageBubble's custom memo comparator.
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
   const inputRef = useRef(input)
   inputRef.current = input
+
+  useEffect(() => {
+    const draft = takeCodexDraft(id)
+    if (!draft) return
+    setInput(draft.text)
+    setAttachments(draft.images.map(uri => ({ uri, mime: uri.slice(5, uri.indexOf(";")), filename: "image" })))
+    if (draft.omittedAttachments) Alert.alert("Codex", zh ? "请重新添加原提问中的文件附件。" : "Reattach the original file attachments before sending.")
+  }, [id])
+
+  const forkCodex = useCallback((messageID?: string) => {
+    if (!ownsSession()) return
+    const current = useSessions.getState().currentSession
+    const message = messageID ? useSessions.getState().messages.find(message => message.id === messageID) : undefined
+    if (!current || !sessionClient || forkingRef.current || revertingRef.current || (messageID && !message?.codexTurnID)) return
+    Keyboard.dismiss()
+    Alert.alert(zh ? "创建会话分支？" : "Fork conversation?",
+      (message ? (zh ? "新分支从这轮提问之前开始，原提问会放入新分支的输入框。" : "The branch starts before this prompt, which is placed in its composer.") : (zh ? "新分支会保留当前完整对话。" : "The branch keeps the full conversation so far.")) + (zh ? "原会话保持原样。两个会话共用当前工作目录和文件。" : " The original conversation stays intact. Both sessions share the current directory and files."), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: zh ? "创建分支" : "Create fork", onPress: async () => {
+        if (!ownsSession() || forkingRef.current || revertingRef.current) return
+        forkingRef.current = true; setForkingCodex(true)
+        try {
+          const result = await sessionClient.codex.fork(current.id, message?.codexTurnID)
+          if (!ownsSession()) return
+          if (result.draft) queueCodexDraft(result.session.id, result.draft)
+          setShowCodex(false)
+          router.push({ pathname: "/session/[id]", params: { id: result.session.id, directory: result.session.directory } })
+        } catch (error) { Alert.alert("Codex", codexError(error)) }
+        finally { forkingRef.current = false; setForkingCodex(false) }
+      } },
+    ])
+  }, [sessionClient, zh, t, router, ownsSession])
 
   const applyRevertResult = useCallback((result: Awaited<ReturnType<typeof revertToMessage>>) => {
     if (!result.ok) {
@@ -235,14 +349,44 @@ export default function SessionScreen() {
   // closing over props) so MessageBubble's custom memo comparator can bail
   // safely without risking a stale handler.
   const handleMessageLongPress = useCallback((messageID: string) => {
+    if (!ownsSession()) return
+    if (isCodex) {
+      const message = useSessions.getState().messages.find(message => message.id === messageID)
+      const current = useSessions.getState().currentSession
+      if (!message?.codexTurnID || !current || !sessionClient || revertingRef.current || forkingRef.current) return
+      Alert.alert(zh ? "回退并编辑这轮提问？" : "Rewind and edit this prompt?",
+        (zh ? "会先保存完整备份，再移除这一轮及之后的对话。文件保持当前状态。原提问会放入输入框供你编辑。" : "A full backup will be saved before removing this turn and later conversation. Files keep their current state. The original prompt will be placed in the composer.") + ((inputRef.current.trim() || attachmentsRef.current.length) ? (zh ? "\n输入框中的未发送草稿将被替换。" : "\nYour unsent draft will be replaced.") : ""), [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: zh ? "备份并回退" : "Back up & rewind", style: "destructive", onPress: async () => {
+          if (!ownsSession() || revertingRef.current) return
+          revertingRef.current = true; setRevertingCodex(true)
+          try {
+            const result = await sessionClient.codex.revert(current.id, message.codexTurnID!)
+            if (!ownsSession()) return
+            await selectSession(current.id, current.directory)
+            if (!ownsSession()) return
+            setTargetMessage(null); setInput(result.draft.text)
+            setAttachments(result.draft.images.map(uri => ({ uri, mime: uri.slice(5, uri.indexOf(";")), filename: "image" })))
+            const details = `${zh ? "备份：" : "Backup: "}${result.backup.title}${result.draft.omittedAttachments ? (zh ? "\n请重新添加原提问中的文件附件。" : "\nReattach the original file attachments before retrying.") : ""}`
+            Alert.alert(zh ? "已回退，可以编辑后重试" : "Rewound. Edit the prompt to retry", details, [
+              { text: zh ? "继续编辑" : "Edit prompt" },
+              { text: zh ? "打开备份" : "Open backup", onPress: () => router.push({ pathname: "/session/[id]", params: { id: result.backup.id, directory: result.backup.directory } }) },
+            ])
+          } catch (error) { Alert.alert("Codex", codexError(error)) }
+          finally { revertingRef.current = false; setRevertingCodex(false) }
+        } },
+      ])
+      return
+    }
     Alert.alert(t("session.alerts.messageActionsTitle"), undefined, [
       { text: t("common.cancel"), style: "cancel" },
       {
         text: t("session.actions.editMessage"),
         onPress: () => {
           const doRevert = async () => {
+            if (!ownsSession()) return
             const result = await useSessions.getState().revertToMessage(messageID)
-            applyRevertResult(result)
+            if (ownsSession()) applyRevertResult(result)
           }
           // Editing overwrites the composer — don't silently clobber an
           // in-progress unsent draft.
@@ -262,35 +406,31 @@ export default function SessionScreen() {
         },
       },
     ])
-  }, [applyRevertResult, t])
+  }, [applyRevertResult, t, isCodex, sessionClient, zh, selectSession, router, ownsSession])
 
   const scrollToBottom = useCallback((animated = true) => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated })
   }, [])
 
-  // Re-select on every focus, not just mount. currentSession/messages/
-  // permissions are a single global store, and the native stack keeps screens
-  // underneath a pushed one mounted. Without re-selecting on focus, navigating
-  // to another session and back would leave this screen bound to the *other*
-  // session's data (and its permission/question prompts) — so a user could
-  // approve the wrong session's tool call. useFocusEffect re-binds this screen
-  // to its own session whenever it becomes visible again.
+  // Each visible route owns its session; returning to a kept-alive screen
+  // starts a fresh selection without displaying another route's store data.
   useFocusEffect(
     useCallback(() => {
-      if (!id) return
-      selectSession(id, directory).then(() => {
-        // Re-fetch pending permissions/questions from the server to recover from
-        // missed SSE events or failed optimistic removals
+      focused.current = true
+      let active = true
+      if (id) void selectSession(id, directory).then(() => {
+        if (!active || !ownsSession()) return
         const connState = useConnections.getState()
         const c = directory ? (connState.clientForDirectory(directory) ?? connState.client) : connState.client
-        if (c) refreshPending(c, id)
+        if (c) void refreshPending(c, id)
       })
-    }, [id, directory]),
+      return () => { active = false; focused.current = false }
+    }, [id, directory, client, activeConnection?.id, selectSession, ownsSession]),
   )
 
   // Sync model chip from latest assistant message
   useEffect(() => {
-    if (!messages || messages.length === 0) return
+    if (isCodex || !messages || messages.length === 0) return
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i]
       if (msg.role === "assistant" && msg.providerID && msg.modelID) {
@@ -302,15 +442,36 @@ export default function SessionScreen() {
         return
       }
     }
-  }, [currentSession?.id, messages?.length])
+  }, [currentSession?.id, messages?.length, isCodex])
 
   // Slash command handler
   const handleSlashSelect = useCallback(
     (cmd: SlashCommand) => {
+      if (!ownsSession()) return
       if (cmd.type === "builtin") {
+        if (isCodex && CODEX_COMMANDS.some(command => command.trigger === cmd.trigger)) {
+          setInput("")
+          if (cmd.trigger === "compact") {
+            openCodex("status")
+            if (sessionClient && currentSession) void sessionClient.codex.compact(currentSession.id)
+              .then(updateCodexSession).catch(error => Alert.alert("Codex", codexError(error)))
+          } else openCodex(cmd.trigger === "effort" ? "effort" : cmd.trigger === "permissions" ? "permissions" : ["plan", "fast"].includes(cmd.trigger) ? "mode" : "status")
+          return
+        }
         switch (cmd.trigger) {
           case "new":
-            router.back()
+          case "clear":
+            if (!isCodex) { router.back(); return }
+            if (creatingRef.current || !sessionClient) return
+            creatingRef.current = true
+            Keyboard.dismiss()
+            setInput("")
+            // Keep the outgoing screen's store intact until the new route owns it.
+            // Use its directory-scoped client so /new stays in the same project.
+            void sessionClient.session.create({}).then(session => {
+              if (ownsSession()) router.replace({ pathname: "/session/[id]", params: { id: session.id, directory: session.directory } })
+            }).catch(error => Alert.alert("Session", codexError(error)))
+              .finally(() => { creatingRef.current = false })
             return
           case "model":
             setInput("")
@@ -324,7 +485,7 @@ export default function SessionScreen() {
       }
       setInput(`/${cmd.trigger} `)
     },
-    [router, cycleAgent],
+    [router, cycleAgent, isCodex, openCodex, sessionClient, currentSession, updateCodexSession, ownsSession],
   )
 
   // --- Image picking ---
@@ -420,13 +581,17 @@ export default function SessionScreen() {
 
   // --- Send ---
   const handleSend = async () => {
-    if (!input.trim() && attachments.length === 0) return
+    if (!ownsSession()) return
+    if (revertingRef.current || forkingRef.current || (!input.trim() && attachments.length === 0)) return
+    const builtin = attachments.length === 0 && isCodex ? allCommands.find(command => command.type === "builtin" && input.trim() === `/${command.trigger}`) : undefined
+    if (builtin) { handleSlashSelect(builtin); return }
     const authenticated = await authenticateForMessage()
     if (!authenticated) {
       Alert.alert(t("session.alerts.authRequiredTitle"), t("session.alerts.authRequiredMessage"))
       return
     }
 
+    if (!ownsSession()) return
     const text = input.trim()
     const files = [...attachments]
     setInput("")
@@ -453,7 +618,7 @@ export default function SessionScreen() {
     // Messages are queued server-side when the session is busy.
     // No need to abort - just send and it will be processed after current response.
     try {
-      await sendMessage(text, model || undefined, agent || undefined, files, variant || undefined)
+      await sendMessage(text, isCodex ? undefined : model || undefined, isCodex ? undefined : agent || undefined, files, isCodex ? undefined : variant || undefined)
     } catch (err) {
       console.error("Send failed:", err)
       // Restore the user's text and attachments so their input isn't lost.
@@ -497,7 +662,7 @@ export default function SessionScreen() {
   }, [reconnectAttempts])
 
   const handlePermissionReply = async (requestID: string, reply: "once" | "always" | "reject") => {
-    if (!sessionClient || !sessionID) return
+    if (!ownsSession() || !sessionClient || !sessionID) return
     // Snapshot for rollback
     const snapshot = useEvents.getState().permissions[sessionID] || []
     // Optimistically remove from UI
@@ -520,7 +685,7 @@ export default function SessionScreen() {
   }
 
   const handleQuestionReply = async (requestID: string, answers: string[][]) => {
-    if (!sessionClient || !sessionID) return
+    if (!ownsSession() || !sessionClient || !sessionID) return
     const snapshot = useEvents.getState().questions[sessionID] || []
     useEvents.setState((state) => ({
       questions: {
@@ -540,7 +705,7 @@ export default function SessionScreen() {
   }
 
   const handleQuestionReject = async (requestID: string) => {
-    if (!sessionClient || !sessionID) return
+    if (!ownsSession() || !sessionClient || !sessionID) return
     const snapshot = useEvents.getState().questions[sessionID] || []
     useEvents.setState((state) => ({
       questions: {
@@ -561,15 +726,19 @@ export default function SessionScreen() {
 
   const handleModelSelect = useCallback(
     (providerID: string, modelID: string) => {
-      setModel({ providerID, modelID })
+      if (!ownsSession()) return
+      if (isCodex && sessionClient && currentSession) {
+        void sessionClient.codex.update(currentSession.id, { model: modelID }).then(updateCodexSession)
+          .catch(error => Alert.alert("Codex", codexError(error)))
+      } else setModel({ providerID, modelID })
     },
-    [setModel],
+    [setModel, isCodex, sessionClient, currentSession, updateCodexSession, ownsSession],
   )
 
   // Current agent display
   const currentAgent = agents.find((a) => a.name === agent)
   const agentColor = currentAgent?.color || "#8b5cf6"
-  const modelLabel = model?.modelID ? model.modelID.split("/").pop() || model.modelID : "default"
+  const modelLabel = isCodex ? currentSession?.codex?.model || "Codex" : model?.modelID ? model.modelID.split("/").pop() || model.modelID : "default"
 
   // Variants for current model (for reasoning effort picker)
   const currentModelVariants = useMemo(() => {
@@ -583,16 +752,18 @@ export default function SessionScreen() {
     <>
       <Stack.Screen
         options={{
-          title: currentSession?.title || t("session.titleFallback"),
+          title: currentSession?.title || routeTitle || t("session.titleFallback"),
           headerRight: () => (
             <View style={s.headerRight}>
+              {isCodex && <TouchableOpacity disabled={!ready} testID="codex-search-button" onPress={() => { Keyboard.dismiss(); setShowSearch(true) }} hitSlop={8}><Ionicons name="search-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
+              {isCodex && <TouchableOpacity disabled={!ready} testID="codex-files-button" onPress={() => { Keyboard.dismiss(); setShowFiles(true) }} hitSlop={8}><Ionicons name="git-compare-outline" size={20} color={isDark ? "#aaaaaa" : "#666666"} /></TouchableOpacity>}
               {shortDir && (
                 <View style={[s.dirBadge, isDark && s.dirBadgeDark]}>
                   <Ionicons name="folder-outline" size={14} color={isDark ? "#888888" : "#666666"} />
                   <Text style={[s.dirText, isDark && s.dirTextDark]}>{shortDir}</Text>
                 </View>
               )}
-              <TouchableOpacity onPress={() => setShowInfo((v) => !v)} hitSlop={8}>
+              <TouchableOpacity disabled={!ready} testID="codex-controls-button" onPress={() => isCodex ? openCodex("status") : setShowInfo((v) => !v)} hitSlop={8}>
                 <Ionicons
                   name={showInfo ? "stats-chart" : "stats-chart-outline"}
                   size={20}
@@ -606,23 +777,25 @@ export default function SessionScreen() {
 
       <View
         ref={keyboardContainerRef}
+        testID={`chat-route-${id}`}
         collapsable={false}
         style={s.container}
         onLayout={() => {
-          // Measure in the same coordinate system as keyboard events. Header
-          // height events can use physical pixels on some Android versions.
-          keyboardContainerRef.current?.measureInWindow((_x, y) => {
-            // React Native Android subtracts the visible window's status-bar
-            // inset from this measurement; keyboard screenY includes it.
-            setKeyboardOffset(y + (Platform.OS === "android" ? insets.top : 0))
-          })
+          // The Android root fills the edge-to-edge window. pageY includes
+          // the native header without measureInWindow's status-bar subtraction.
+          // Safe-area top can include a cutout and is not that subtraction.
+          if (Platform.OS === "android") {
+            keyboardContainerRef.current?.measure((_x, _y, _w, _h, _pageX, pageY) => setKeyboardOffset(pageY))
+          } else {
+            keyboardContainerRef.current?.measureInWindow((_x, y) => setKeyboardOffset(y))
+          }
         }}
       >
         <KeyboardAvoidingView
           style={[s.container, isDark && s.containerDark]}
           // Edge-to-edge Android needs explicit keyboard avoidance. Keyboard
           // events use screen coordinates, but this view starts below the stack
-          // header. Include the measured screen offset (including the status bar), or
+          // header. Include its measured position in the window, or
           // the composer remains covered by that amount when Gboard opens.
           behavior="padding"
           // Android's hide event still carries window coordinates. Calculating
@@ -667,6 +840,7 @@ export default function SessionScreen() {
               <Text style={s.bannerText}>{t("session.banners.reverted")}</Text>
               <TouchableOpacity
                 onPress={() => {
+                  if (!ownsSession()) return
                   unrevertSession()
                   // The composer was prefilled with the reverted message's text/
                   // attachments (see applyRevertResult) — clear it so Undo doesn't
@@ -681,26 +855,44 @@ export default function SessionScreen() {
             </View>
           )}
 
+          {loadError && currentSession && <View style={s.banner}><Text style={s.bannerText}>{zh ? "刷新失败，请重试" : "Refresh failed. Try again."}</Text><TouchableOpacity testID="chat-retry-session" onPress={() => selectSession(id, directory)}><Text style={s.bannerAction}>{zh ? "重试" : "Retry"}</Text></TouchableOpacity></View>}
           {isLoading ? (
-            <View style={s.loading}>
+            <View testID="chat-loading-session" style={s.loading}>
               <ActivityIndicator size="large" color={isDark ? "#ffffff" : "#0a0a0a"} />
             </View>
+          ) : loadError && !currentSession ? (
+            <View testID="chat-session-error" style={s.loading}>
+              <Text style={{ color: isDark ? "#ffffff" : "#333333", marginBottom: 16 }}>{zh ? "会话加载失败，请重试" : "Could not load this conversation. Try again."}</Text>
+              <TouchableOpacity testID="chat-retry-session" onPress={() => selectSession(id, directory)} style={{ padding: 16 }}><Text style={{ color: "#8b5cf6", fontSize: 16 }}>{zh ? "重新加载" : "Reload conversation"}</Text></TouchableOpacity>
+            </View>
           ) : (
-            <View style={s.listWrap}>
+            <View testID={`chat-content-${currentSession?.id || "empty"}`} style={s.listWrap}>
               <FlatList
                 ref={flatListRef}
+                // Fabric can reattach a clipped child while this inverted list
+                // is being removed during a session switch, crashing Android.
+                removeClippedSubviews={false}
                 data={messageData}
                 inverted
                 keyExtractor={(item) => item.message.id}
                 renderItem={({ item }) => (
+                  <View testID={targetMessage === item.message.id ? "codex-search-target" : undefined} style={targetMessage === item.message.id ? { borderWidth: 2, borderColor: "#8b5cf6", borderRadius: 12 } : undefined}>
                   <MessageBubble
                     message={item.message}
                     parts={item.parts}
                     isDark={isDark}
                     onLongPress={handleMessageLongPress}
+                    onFork={isCodex ? forkCodex : undefined}
+                    imageSource={sessionClient?.imageSource}
                   />
+                  </View>
                 )}
                 contentContainerStyle={s.messageList}
+                onScrollToIndexFailed={({ index, averageItemLength }) => {
+                  if (!targetMessage || jumpRetries.current++ > 12) return
+                  flatListRef.current?.scrollToOffset({ offset: Math.max(0, averageItemLength * index), animated: false })
+                  setTimeout(() => flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 300)
+                }}
                 onScroll={handleScroll}
                 scrollEventThrottle={100}
                 onEndReached={handleLoadMore}
@@ -733,6 +925,8 @@ export default function SessionScreen() {
             </View>
           )}
 
+          {forkingCodex && <View style={s.banner}><ActivityIndicator color="#8b5cf6" /><Text style={{ color: "#8b5cf6" }}>{zh ? "正在创建分支…" : "Creating fork…"}</Text></View>}
+          {revertingCodex && <View style={s.banner}><ActivityIndicator color="#8b5cf6" /><Text style={{ color: "#8b5cf6" }}>{zh ? "正在保存备份并回退…" : "Saving backup and rewinding…"}</Text></View>}
           {/* Status */}
           {currentSession && <StatusIndicator sessionID={currentSession.id} isDark={isDark} />}
 
@@ -758,19 +952,19 @@ export default function SessionScreen() {
           ))}
 
           {/* Slash popover */}
-          {slashActive && (
+          {ready && slashActive && (
             <SlashPopover query={slashQuery} commands={allCommands} isDark={isDark} onSelect={handleSlashSelect} />
           )}
 
           {/* Agent/model toolbar */}
-          <View style={[s.toolbar, isDark && s.toolbarDark]}>
+          <View pointerEvents={ready ? "auto" : "none"} style={[s.toolbar, isDark && s.toolbarDark, !ready && { opacity: 0.4 }]}>
             <TouchableOpacity
               style={[s.agentChip, { borderColor: agentColor }]}
-              onPress={() => cycleAgent()}
-              onLongPress={() => cycleAgent(-1)}
+              onPress={() => isCodex ? openCodex("mode") : cycleAgent()}
+              onLongPress={() => isCodex ? openCodex("mode") : cycleAgent(-1)}
             >
               <View style={[s.agentDot, { backgroundColor: agentColor }]} />
-              <Text style={[s.agentLabel, isDark && s.textWhite]}>{agent || "build"}</Text>
+              <Text style={[s.agentLabel, isDark && s.textWhite]}>{isCodex ? currentSession?.codex?.mode || "default" : agent || "build"}</Text>
               <Ionicons name="swap-horizontal-outline" size={12} color={isDark ? "#888888" : "#666666"} />
             </TouchableOpacity>
 
@@ -785,7 +979,13 @@ export default function SessionScreen() {
               </Text>
             </TouchableOpacity>
 
-            {currentModelVariants && Object.keys(currentModelVariants).length > 0 && (
+            {isCodex && (
+              <TouchableOpacity style={[s.variantChip, isDark && s.variantChipDark]} onPress={() => openCodex("effort")} testID="codex-effort-chip">
+                <Ionicons name="flash-outline" size={14} color="#8b5cf6" />
+                <Text style={[s.variantLabel, isDark && s.metaDark]}>{currentSession?.codex?.effort || "default"}</Text>
+              </TouchableOpacity>
+            )}
+            {!isCodex && currentModelVariants && Object.keys(currentModelVariants).length > 0 && (
               <TouchableOpacity
                 style={[s.variantChip, isDark && s.variantChipDark, variant && s.variantChipActive]}
                 onPress={() => variantSheetRef.current?.expand()}
@@ -808,12 +1008,12 @@ export default function SessionScreen() {
           >
             <View style={s.inputRow}>
               {/* Attach button */}
-              <TouchableOpacity style={s.attachBtn} onPress={pickFromLibrary} onLongPress={pickFromCamera}>
+              <TouchableOpacity disabled={!ready} style={s.attachBtn} onPress={pickFromLibrary} onLongPress={pickFromCamera}>
                 <Ionicons name="add-circle-outline" size={26} color={isDark ? "#888888" : "#666666"} />
               </TouchableOpacity>
 
               {/* Clipboard paste button */}
-              <TouchableOpacity style={s.attachBtn} onPress={pasteFromClipboard}>
+              <TouchableOpacity disabled={!ready} style={s.attachBtn} onPress={pasteFromClipboard}>
                 <Ionicons name="clipboard-outline" size={22} color={isDark ? "#888888" : "#666666"} />
               </TouchableOpacity>
 
@@ -829,20 +1029,20 @@ export default function SessionScreen() {
                 placeholderTextColor={speech.listening ? "#ef4444" : isDark ? "#666666" : "#999999"}
                 value={speech.listening ? speech.transcript : input}
                 onChangeText={speech.listening ? undefined : setInput}
-                editable={!speech.listening}
+                editable={ready && !speech.listening}
                 multiline
                 maxLength={10000}
                 testID="chat-message-input"
               />
               {/* Stop button: only when busy and no input */}
               {isSending && !input.trim() && attachments.length === 0 && !speech.listening && (
-                <TouchableOpacity style={s.stopBtn} onPress={abortSession}>
+                <TouchableOpacity style={s.stopBtn} onPress={() => { if (ownsSession()) void abortSession() }}>
                   <Ionicons name="stop" size={20} color="#ffffff" />
                 </TouchableOpacity>
               )}
               {/* Mic button: when no input, not sending, and not listening */}
               {!isSending && !input.trim() && attachments.length === 0 && !speech.listening && (
-                <TouchableOpacity style={s.micBtn} onPress={speech.start}>
+                <TouchableOpacity disabled={!ready} style={s.micBtn} onPress={speech.start}>
                   <Ionicons name="mic" size={22} color={isDark ? "#888888" : "#666666"} />
                 </TouchableOpacity>
               )}
@@ -854,7 +1054,7 @@ export default function SessionScreen() {
               )}
               {/* Send button: when there's input */}
               {!speech.listening && (input.trim() || attachments.length > 0) && (
-                <TouchableOpacity style={s.sendBtn} onPress={handleSend} testID="chat-send-button">
+                <TouchableOpacity disabled={!ready} style={[s.sendBtn, !ready && { opacity: 0.4 }]} onPress={handleSend} testID="chat-send-button">
                   <Ionicons name="send" size={20} color="#ffffff" />
                 </TouchableOpacity>
               )}
@@ -863,11 +1063,16 @@ export default function SessionScreen() {
         </KeyboardAvoidingView>
       </View>
 
+      {isCodex && <CodexSearch visible={showSearch} client={sessionClient} sessionId={currentSession?.id} isDark={isDark} onClose={() => setShowSearch(false)} onSelect={locateMessage} />}
+      {isCodex && <CodexFiles visible={showFiles} client={sessionClient} sessionId={currentSession?.id} isDark={isDark} onClose={() => setShowFiles(false)} />}
+      {isCodex && <CodexControls visible={showCodex} tab={codexTab} session={currentSession} client={sessionClient}
+        isDark={isDark} busy={isSending} onClose={() => setShowCodex(false)} onSession={updateCodexSession} onFork={() => forkCodex()} forking={forkingCodex} />}
+
       {/* Model picker bottom sheet */}
       <ModelPicker
         sheetRef={modelSheetRef}
         providers={providers}
-        selected={model}
+        selected={isCodex && currentSession?.codex?.model ? { providerID: "codex", modelID: currentSession.codex.model } : model}
         isDark={isDark}
         onSelect={handleModelSelect}
       />

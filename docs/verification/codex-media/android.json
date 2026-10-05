@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "inferenceRequests": 0,
+  "checks": [
+    "viewed image preview",
+    "full-screen zoom and close",
+    "Markdown local image",
+    "missing image error",
+    "retry recovery",
+    "original generated and viewed images",
+    "empty source records omitted"
+  ]
+}

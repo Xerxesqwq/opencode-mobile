@@ -215,3 +215,37 @@ Copyright (c) 2026 VIBE TECHNOLOGIES, LLC
 - [sst/opencode](https://github.com/sst/opencode) — the AI coding agent this app connects to (MIT)
 - [Expo](https://expo.dev) — the React Native toolchain powering the app
 - Every contributor who filed a bug, opened a PR, or starred the repo
+
+### Codex over direct HTTPS
+
+Version 0.4.17 adds a **Codex** service choice when adding a connection. Run the
+[Codex gateway](server/codex/README.md) alongside your locally authenticated
+Codex daemon, put it behind HTTPS, and enter its URL and gateway credentials in
+the app. It supports existing and new sessions, streaming, interruptions, models,
+approvals and questions. Version 0.4.18 adds session controls for context compaction,
+reasoning effort, permission profiles, approval policy, plan/default mode, context
+usage and account limits. Open the chart icon in a chat header. See the gateway
+documentation for protocol requirements and supported operations. Version 0.4.19 adds
+full-history search, backup and rewind, grouped file review, batch archive/restore,
+and a global task dashboard with task switching and stop controls.
+
+Version 0.4.20 adds full conversation forks and forks before a selected prompt,
+with inherited settings and editable drafts in the new branch. Conversations
+share the current working directory and files.
+
+Version 0.4.21 adds Fast/Standard speed selection under **Codex session → Mode**.
+`/fast` opens the same controls. Status shows the effective speed, and unsupported
+models disable Fast. Changes apply to subsequent turns of the current session.
+
+Version 0.4.22 hides empty assistant records and displays generated, viewed and
+Markdown images. Tap a preview for full-screen zoom and drag. Unavailable files
+show a retry action. Gateway media requests use the saved connection credentials.
+
+Version 0.4.23 binds each chat screen to its selected conversation. Delayed
+refreshes and history pages from another conversation are discarded. Failed
+loads show a retry action, and the composer stays disabled until the selected
+conversation is ready.
+
+Version 0.4.24 fixes the Android crash when `/new` switches away from a long
+conversation. `/new` and `/clear` start a fresh conversation in the current
+project and preserve previous conversations. Failed creation shows an error.

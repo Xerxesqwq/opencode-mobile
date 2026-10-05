@@ -1,10 +1,13 @@
 // Connection types for multiple server support
+export type ServerBackend = "opencode" | "codex"
+
 export type ConnectionType = "local" | "tunnel" | "cloud"
 
 export interface ServerConnection {
   id: string
   name: string
   type: ConnectionType
+  backend?: ServerBackend
   url: string
   // For auth
   username?: string

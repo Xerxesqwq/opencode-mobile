@@ -324,6 +324,15 @@ export const useEvents = create<EventsState>((set, get) => ({
               break
             }
 
+            case "codex.library.changed": {
+              void useSessions.getState().loadSessions()
+              break
+            }
+            case "codex.history.changed": {
+              const current = useSessions.getState().currentSession
+              if (current && current.id === props.sessionID) void useSessions.getState().selectSession(current.id, current.directory)
+              break
+            }
             case "session.updated": {
               const info = props.info as Session | undefined
               if (!info) break

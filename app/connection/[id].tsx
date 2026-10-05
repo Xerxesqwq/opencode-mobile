@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   useColorScheme,
   ActivityIndicator,
@@ -15,7 +14,9 @@ import { Ionicons } from "@expo/vector-icons"
 import { useTranslation } from "react-i18next"
 import { useConnections } from "../../src/stores/connections"
 import { useEvents } from "../../src/stores/events"
-import type { ConnectionType } from "../../src/lib/types"
+import { KeyboardForm } from "../../src/components/KeyboardForm"
+import { BackendPicker } from "../../src/components/BackendPicker"
+import type { ServerBackend, ConnectionType } from "../../src/lib/types"
 import { probeConnection, shareReport } from "../../src/lib/diagnostics"
 import { captureDiagnostic } from "../../src/lib/sentry"
 import { parseUrl } from "../../src/lib/diagnostics-classify"
@@ -44,6 +45,7 @@ export default function EditConnectionScreen() {
 
   const connection = connections.find((c) => c.id === id)
 
+  const [backend, setBackend] = useState<ServerBackend>(connection?.backend || "opencode")
   const [type, setType] = useState<ConnectionType>(connection?.type || "local")
   const [name, setName] = useState(connection?.name || "")
   const [url, setUrl] = useState(connection?.url || "")
@@ -87,6 +89,7 @@ export default function EditConnectionScreen() {
         id: connection.id,
         name: name || "Test",
         type,
+        backend,
         url: url.trim(),
         directory: directory.trim() || undefined,
         username: username.trim() || undefined,
@@ -140,6 +143,7 @@ export default function EditConnectionScreen() {
         {
           name: name.trim(),
           type,
+          backend,
           url: url.trim(),
           directory: directory.trim() || undefined,
           username: username.trim() || undefined,
@@ -181,11 +185,12 @@ export default function EditConnectionScreen() {
   }
 
   return (
-    <ScrollView
+    <KeyboardForm
       style={[styles.container, isDark && styles.containerDark]}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
+      <BackendPicker value={backend} onChange={setBackend} />
       {/* Connection Type */}
       <Text style={[styles.label, isDark && styles.labelDark]}>{t("connection.shared.connectionType")}</Text>
       <View style={styles.typeContainer}>
@@ -227,6 +232,7 @@ export default function EditConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={name}
         onChangeText={setName}
+        testID="connection-name-input"
       />
 
       {/* URL */}
@@ -237,6 +243,7 @@ export default function EditConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={url}
         onChangeText={setUrl}
+        testID="connection-url-input"
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
@@ -250,6 +257,7 @@ export default function EditConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={directory}
         onChangeText={setDirectory}
+        testID="connection-directory-input"
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -261,10 +269,11 @@ export default function EditConnectionScreen() {
       <Text style={[styles.label, isDark && styles.labelDark]}>{t("connection.shared.username")}</Text>
       <TextInput
         style={[styles.input, isDark && styles.inputDark]}
-        placeholder="admin"
+        placeholder={backend === "codex" ? "opencode" : "admin"}
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={username}
         onChangeText={setUsername}
+        testID="connection-username-input"
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -276,6 +285,7 @@ export default function EditConnectionScreen() {
         placeholderTextColor={isDark ? "#666666" : "#999999"}
         value={password}
         onChangeText={setPassword}
+        testID="connection-password-input"
         secureTextEntry
       />
 
@@ -315,7 +325,7 @@ export default function EditConnectionScreen() {
           <Text style={styles.deleteButtonText}>{t("connection.edit.deleteButton")}</Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+    </KeyboardForm>
   )
 }
 

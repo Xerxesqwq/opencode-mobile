@@ -1,0 +1,3 @@
+v0.4.19
+
+Codex: search full conversation history, rewind with a full backup, review grouped file changes, archive and restore sessions in batches, and monitor running tasks from the global dashboard.

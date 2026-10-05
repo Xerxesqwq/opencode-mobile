@@ -1,7 +1,9 @@
 import { useMemo, type ReactNode } from "react"
-import { View, Text, useColorScheme, Platform, type StyleProp, type ViewStyle, type TextStyle } from "react-native"
+import { View, Text, useColorScheme, Platform, type StyleProp, type ViewStyle, type TextStyle, type ImageStyle } from "react-native"
 import { useMarkdown, Renderer } from "react-native-marked"
 import { CodeBlock } from "./CodeBlock"
+import { MessageImage } from "../chat/MessageImage"
+import type { ImageSourceResolver } from "../../lib/image-source"
 
 // react-native-marked's base Renderer hardcodes `selectable` on every plain
 // text node it produces (text/strong/em/del/heading/codespan). On Android,
@@ -15,6 +17,10 @@ import { CodeBlock } from "./CodeBlock"
 // this. Code content is still copyable via CodeBlock's explicit Copy
 // button, so dropping `selectable` on plain text costs little.
 class CustomRenderer extends Renderer {
+  constructor(private imageSource?: ImageSourceResolver) { super() }
+  image(uri: string, alt?: string, _style?: ImageStyle, title?: string): ReactNode {
+    return <MessageImage key={this.getKey()} source={this.imageSource ? this.imageSource(uri) : { uri }} label={alt || title} />
+  }
   private plainText(children: string | ReactNode[], styles?: StyleProp<TextStyle>): ReactNode {
     return (
       <Text key={this.getKey()} style={styles}>
@@ -126,9 +132,10 @@ const darkTheme = {
 
 interface Props {
   children: string
+  imageSource?: ImageSourceResolver
 }
 
-export function Markdown({ children }: Props) {
+export function Markdown({ children, imageSource }: Props) {
   const isDark = useColorScheme() === "dark"
   const theme = isDark ? darkTheme : lightTheme
 
@@ -141,7 +148,7 @@ export function Markdown({ children }: Props) {
   // the renderer to `children` resets the slugger per parse, so keys are
   // deterministic (and stable) for a given value, while re-renders with an
   // unchanged value stay memoized instead of creating a new renderer.
-  const renderer = useMemo(() => new CustomRenderer(), [children])
+  const renderer = useMemo(() => new CustomRenderer(imageSource), [children, imageSource])
 
   // react-native-marked's default <RNMarkdown> export renders blocks inside a
   // FlatList. Chat messages are rendered inside app/session/[id].tsx's own

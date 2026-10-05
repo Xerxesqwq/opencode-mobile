@@ -1,0 +1,3 @@
+v0.4.20
+
+Fork a Codex conversation from current progress or before a selected prompt. Continue in a new branch with inherited settings while preserving the original conversation.

@@ -1,0 +1,30 @@
+{
+  "arm64-v8a": {
+    "bytes": 37983047,
+    "sha256": "6edb67f95647b01f7282bdefa94b7c4a280aa162055f0b589877c67d62f81971",
+    "architectures": [
+      "arm64-v8a"
+    ],
+    "package": "cc.agentlabs.opencode",
+    "versionName": "0.4.17",
+    "versionCode": 45,
+    "debuggable": false,
+    "certificateSha256": "10d49f279b3a3bd365b6c86b93f2a94830ceb334efc8b258f611e776d71c7e67",
+    "bundleSha256": "0697be8d821bccfd4ce3c8053b21e478d322a837c611e84746ef46933268ccea",
+    "zipAlignment16KiB": true
+  },
+  "x86_64": {
+    "bytes": 38643275,
+    "sha256": "5bced54aeb73dad0b8b7268a37d20c727d877c8580f7433b0d623cbbcee185da",
+    "architectures": [
+      "x86_64"
+    ],
+    "package": "cc.agentlabs.opencode",
+    "versionName": "0.4.17",
+    "versionCode": 45,
+    "debuggable": false,
+    "certificateSha256": "10d49f279b3a3bd365b6c86b93f2a94830ceb334efc8b258f611e776d71c7e67",
+    "bundleSha256": "0697be8d821bccfd4ce3c8053b21e478d322a837c611e84746ef46933268ccea",
+    "zipAlignment16KiB": true
+  }
+}

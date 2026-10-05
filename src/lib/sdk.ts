@@ -8,6 +8,8 @@ import { SSEParser } from "./sse"
 import { apiErrorFor } from "./api-error"
 import { loadSessionList } from "./session-list"
 import type { FileRoot } from "./file-roots"
+import { imageSource } from "./image-source"
+import type { CodexSession, CodexOptions, CodexSettingsPatch, CodexLimits, CodexSearchPage, CodexFileChanges, CodexTaskState, CodexDraft } from "./codex"
 
 export { ApiAuthError, isAuthError } from "./api-error"
 
@@ -21,6 +23,7 @@ export interface ClientConfig {
 }
 
 export interface Session {
+  codex?: CodexSession
   id: string
   slug: string
   projectID: string
@@ -50,6 +53,7 @@ export interface Session {
 }
 
 export interface Message {
+  codexTurnID?: string
   id: string
   sessionID: string
   role: "user" | "assistant"
@@ -169,6 +173,7 @@ export interface Event {
 }
 
 export interface HealthResponse {
+  backend?: "opencode" | "codex"
   healthy: boolean
   version: string
 }
@@ -187,7 +192,7 @@ export class ApiError extends Error {
   }
 }
 
-function createHeaders(config: ClientConfig): HeadersInit {
+function createHeaders(config: ClientConfig): Record<string, string> {
   return buildRequestHeaders(config)
 }
 
@@ -254,6 +259,7 @@ export function createClient(config: ClientConfig) {
   // trailing slash is untouched.
   config = { ...config, baseUrl: config.baseUrl.replace(/\/+$/, "") }
   return {
+    imageSource: (url: string) => imageSource(config.baseUrl, createHeaders(config), url),
     global: {
       // `timeoutMs` overrides the default REQUEST_TIMEOUT_MS — used by the
       // onboarding connection test to fail fast on a bad/unreachable IP
@@ -306,6 +312,24 @@ export function createClient(config: ClientConfig) {
           reader.releaseLock()
         }
       },
+    },
+
+    codex: {
+      search: (id: string, q: string, kind = "all", offset = 0, signal?: AbortSignal) =>
+        request<CodexSearchPage>(config, `/session/${id}/codex/search?${new URLSearchParams({ q, kind, offset: String(offset) })}`, { signal }),
+      files: (id: string, turn?: string) => request<CodexFileChanges>(config, `/session/${id}/codex/files${turn ? `?turn=${encodeURIComponent(turn)}` : ""}`),
+      fork: (id: string, beforeTurnId?: string) => request<{ session: Session; sourceID: string; draft: CodexDraft | null }>(config, `/session/${id}/codex/fork`, { method: "POST", body: JSON.stringify({ beforeTurnId }) }, 90000),
+      revert: (id: string, beforeTurnId: string) => request<{ session: Session; backup: Session; draft: { text: string; images: string[]; omittedAttachments: number } }>(config, `/session/${id}/codex/revert`, { method: "POST", body: JSON.stringify({ beforeTurnId }) }, 90000),
+      library: (archived = false) => request<Session[]>(config, `/codex/library?archived=${archived}`),
+      archive: (ids: string[], archived: boolean) => request<{ results: Array<{ id: string; ok: boolean; error?: string }> }>(config, "/codex/archive", { method: "POST", body: JSON.stringify({ ids, archived }) }, 120000),
+      tasks: () => request<{ items: Array<{ session: Session; state: CodexTaskState; canStop: boolean; error: string | null; statusUnavailable: boolean }>; recentLimit: number; totalSessions: number; updatedAt: number }>(config, "/codex/tasks"),
+      options: () => request<CodexOptions>(config, "/codex/options"),
+      limits: () => request<CodexLimits>(config, "/codex/limits"),
+      update: (id: string, patch: CodexSettingsPatch) => request<Session>(config, `/session/${id}/codex`, {
+        method: "PATCH", body: JSON.stringify(patch),
+      }),
+      compact: (id: string) => request<Session>(config, `/session/${id}/compact`, { method: "POST" }),
+      diff: (id: string) => request<{ diff: string }>(config, `/session/${id}/codex/diff`),
     },
 
     project: {

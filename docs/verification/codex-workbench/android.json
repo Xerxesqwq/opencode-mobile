@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "fixture": "01a105f5-c76c-76b2-a557-ea9be9fe16dd",
+  "checks": [
+    "search and locate",
+    "grouped diffs and line numbers",
+    "collapse and expand",
+    "backup and rewind draft",
+    "retry reply",
+    "batch archive and restore",
+    "global task stop and jump"
+  ]
+}

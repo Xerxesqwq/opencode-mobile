@@ -1,0 +1,15 @@
+{
+  "source": "01a1061b-8863-7b81-ad87-3b732e396d3f",
+  "title": "Fast Luna check 1791103830105",
+  "model": "gpt-6-luna",
+  "fastTier": "priority",
+  "passed": true,
+  "checks": [
+    "catalog capability",
+    "Fast on",
+    "Standard off",
+    "Luna replies in both modes",
+    "native reconnect persistence",
+    "effort and permissions preserved"
+  ]
+}

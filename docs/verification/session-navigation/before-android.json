@@ -1,0 +1,5 @@
+{
+  "bugReproduced": true,
+  "scenario": "B remains after clicking A and its history request fails",
+  "inferenceRequests": 0
+}

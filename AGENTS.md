@@ -263,3 +263,8 @@ For pushes/gh CLI on this repo: `source ~/.env.d/github-dzianisv.env`
 
 - Upstream: `anomalyco/opencode#10288`
 - Branch on upstream fork: `feat/android-backbone-10288` on `dzianisv/opencode`
+
+## Codex live-test models
+
+Use Luna for model-backed Codex tests; select it explicitly before the first prompt.
+Keep test fixtures separate from user sessions and delete them after verification.

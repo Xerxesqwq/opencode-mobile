@@ -1,0 +1,12 @@
+{
+  "client": {
+    "passed": 353,
+    "failed": 0
+  },
+  "gateway": {
+    "passed": 40,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "versionParity": "0.4.24 (52)"
+}

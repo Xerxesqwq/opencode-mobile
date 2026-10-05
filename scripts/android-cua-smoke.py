@@ -1713,6 +1713,66 @@ def run_query_test(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def run_scenario_session_navigation():
+    """Exercise delayed and failed session loads against a local fixture."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/session-navigation")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-session-navigation.py")),
+        "--output-dir", str(output),
+    ], timeout=480, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
+def run_scenario_codex_media():
+    """Verify image previews and empty-message filtering without model calls."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-media")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-media.py")),
+        "--output-dir", str(output),
+    ], timeout=480, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
+def run_scenario_codex_fast():
+    """Verify native Fast/Standard controls using only a Luna test thread."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-fast")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-fast.py")),
+        "--output-dir", str(output),
+    ], timeout=300, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
+def run_scenario_codex_fork():
+    """Verify full and selected-prompt forks against a dedicated native fixture."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-fork")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-fork.py")),
+        "--output-dir", str(output),
+    ], timeout=360, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
+def run_scenario_codex_workbench():
+    """Check search, rewind, file review, archives and live tasks on Android."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-workbench")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-workbench.py")),
+        "--output-dir", str(output),
+    ], timeout=420, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
+def run_scenario_codex_direct():
+    """Exercise authenticated Codex connections with real Android controls."""
+    output = Path(os.environ.get("ANDROID_CODEX_OUTPUT_DIR", "verification/codex-direct")).resolve()
+    result = subprocess.run([
+        sys.executable, str(Path(__file__).with_name("check-codex-direct.py")),
+        "--output-dir", str(output),
+    ], timeout=360, check=False)
+    return {"status": "success" if result.returncode == 0 else "failed", "output": str(output)}
+
+
 def run_scenario_keyboard_restoration():
     """Measure real IME cycles in a chat connected to the seeded mock server.
 
@@ -2057,6 +2117,12 @@ Examples:
         # Deterministic feature scenarios (run as functions, not LLM-goal strings)
         deterministic_catalog = {
             "keyboard_restoration": run_scenario_keyboard_restoration,
+            "codex_direct": run_scenario_codex_direct,
+            "codex_workbench": run_scenario_codex_workbench,
+            "codex_fork": run_scenario_codex_fork,
+            "codex_fast": run_scenario_codex_fast,
+            "codex_media": run_scenario_codex_media,
+            "session_navigation": run_scenario_session_navigation,
             "sse_disconnect_banner": lambda: run_scenario_sse_disconnect_banner(
                 connect_url, args.model, args.include_xml),
             "backgrounded_permission_notification": lambda: run_scenario_backgrounded_permission_notification(
