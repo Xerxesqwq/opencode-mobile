@@ -1,0 +1,138 @@
+name: Publish verified GitHub CI prerelease
+
+on:
+  push:
+    branches: [release/github-v0.4.24-ci.1]
+
+# This one-shot branch publishes only the already-verified main artifact.
+# GITHUB_TOKEN intentionally prevents tag/release events from triggering
+# downstream Play Store, F-Droid, or App Store publishing workflows.
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: github-release-v0.4.24-ci.1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Xerxesqwq/opencode-mobile' && github.ref == 'refs/heads/release/github-v0.4.24-ci.1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: Xerxesqwq/opencode-mobile
+      SOURCE_SHA: 16f5af2fcc32bf59a4c60aefd895c57c1e403124
+      RELEASE_TAG: v0.4.24-ci.1
+      APK_NAME: opencode-mobile-0.4.24-ci-debug-signed.apk
+    steps:
+      - name: Verify source CI and artifact provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 37408727422 37408727441 37408727425; do
+            gh api "repos/$GH_REPO/actions/runs/$RUN" > "run-$RUN.json"
+            jq -e --arg sha "$SOURCE_SHA" '.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion == "success"' "run-$RUN.json"
+          done
+          gh api "repos/$GH_REPO/actions/artifacts/11388009204" > artifact.json
+          jq -e --arg sha "$SOURCE_SHA" '.name == "app-release" and .expired == false and .size_in_bytes == 39974693 and .digest == "sha256:a2a65af594161e20cf3202937f5b0fd4dbb4b09daccf77c37aae8863b823c89f" and .workflow_run.id == 37408727441 and .workflow_run.head_sha == $sha' artifact.json
+          # Refuse to replace an existing release or tag.
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" --slurp > releases.json
+          jq -e --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)] | length == 0' releases.json
+          gh api "repos/$GH_REPO/git/matching-refs/tags/$RELEASE_TAG" > tags.json
+          jq -e --arg ref "refs/tags/$RELEASE_TAG" '[.[] | select(.ref == $ref)] | length == 0' tags.json
+
+      - name: Download and verify the existing APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/artifacts/11388009204/zip" > android-ci.zip
+          echo "a2a65af594161e20cf3202937f5b0fd4dbb4b09daccf77c37aae8863b823c89f  android-ci.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('android-ci.zip') as archive:
+              assert archive.namelist() == ['app-release.apk']
+              assert archive.getinfo('app-release.apk').file_size == 92779003
+              archive.extract('app-release.apk')
+          PY
+          mv app-release.apk "$APK_NAME"
+          echo "e03b48cfee4a01637f6753a6ad8d8e08b13435b690804ecb7bcf66c0e0002e67  $APK_NAME" > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK_NAME" | tee apk-signature.txt
+          grep -F 'Signer #1 certificate DN: CN=Android Debug, O=Android, C=US' apk-signature.txt
+          grep -F 'Signer #1 certificate SHA-256 digest: 9b13e51a963f1405d9ab0264f1ac8cfb4bc6fb8a370dd88736e7c85bb6781dee' apk-signature.txt
+          "$TOOLS/aapt" dump badging "$APK_NAME" > apk-badging.txt
+          grep -F "package: name='cc.agentlabs.opencode' versionCode='52' versionName='0.4.24'" apk-badging.txt
+          grep -F "sdkVersion:'24'" apk-badging.txt
+          if grep -q '^application-debuggable' apk-badging.txt; then
+            echo 'Unexpected debuggable build' >&2
+            exit 1
+          fi
+
+      - name: Prepare factual release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'NOTES'
+          ## OpenCode Mobile 0.4.24 CI preview
+
+          Android release-variant build from commit [16f5af2fcc32bf59a4c60aefd895c57c1e403124](https://github.com/Xerxesqwq/opencode-mobile/commit/16f5af2fcc32bf59a4c60aefd895c57c1e403124), published as a prerelease for testing.
+
+          ### Changes
+          - Fix the Android crash when /new switches away from a long conversation.
+          - /new and /clear start a fresh conversation in the current project while preserving previous conversations.
+          - Fix fork CI failures caused by unconfigured optional integrations. Sentry source-map uploads are explicitly opt-in; the core Android/iOS build, typecheck, unit-test, and security checks passed for this commit.
+          - Source includes Codex gateway 0.6.1.
+
+          ### Download and installation
+          - APK: opencode-mobile-0.4.24-ci-debug-signed.apk
+          - App version: 0.4.24; Android versionCode: 52
+          - Package: cc.agentlabs.opencode
+          - Android 7.0 / API 24 or later; arm64-v8a, armeabi-v7a, x86, x86_64
+          - The APK is exactly the existing [successful Android CI artifact](https://github.com/Xerxesqwq/opencode-mobile/actions/runs/37408727441), not a rebuild.
+
+          ### Signing warning
+          This APK uses a CI-generated Android Debug certificate, not a production signing key. It is intended for testing. Its key may differ from other CI builds and official store/F-Droid installations, so Android may reject an in-place update. Back up any important local app data before changing installations; uninstalling removes local app data. This GitHub prerelease does not publish to Google Play, F-Droid, or the App Store. No iOS installation package is included.
+
+          APK SHA-256: e03b48cfee4a01637f6753a6ad8d8e08b13435b690804ecb7bcf66c0e0002e67
+          Signing certificate SHA-256: 9b13e51a963f1405d9ab0264f1ac8cfb4bc6fb8a370dd88736e7c85bb6781dee
+
+          SHA256SUMS.txt is included for download verification.
+          NOTES
+
+      - name: Create tag and upload a draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Token-created tag and release events do not start other workflows:
+          # https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
+          gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$SOURCE_SHA"
+          gh release create "$RELEASE_TAG" "$APK_NAME" SHA256SUMS.txt \
+            --repo "$GH_REPO" --verify-tag --target "$SOURCE_SHA" \
+            --title "OpenCode Mobile 0.4.24 CI preview (debug-signed)" \
+            --notes-file release-notes.md --prerelease --draft
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" --slurp | jq --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("Expected exactly one draft release") end' > draft-release.json
+          jq -e --arg apk "$APK_NAME" '.draft == true and .prerelease == true and (.assets | length == 2) and ([.assets[] | select(.name == $apk and .state == "uploaded" and .size == 92779003 and .digest == "sha256:e03b48cfee4a01637f6753a6ad8d8e08b13435b690804ecb7bcf66c0e0002e67")] | length == 1) and ([.assets[] | select(.name == "SHA256SUMS.txt" and .state == "uploaded")] | length == 1)' draft-release.json
+
+      - name: Publish and verify the GitHub prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" | jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha'
+          gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --latest=false
+          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" | jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha'
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > published-release.json
+          jq -e '.draft == false and .prerelease == true and (.assets | length == 2)' published-release.json
+          mkdir downloaded
+          gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir downloaded
+          cmp SHA256SUMS.txt downloaded/SHA256SUMS.txt
+          (cd downloaded && sha256sum -c SHA256SUMS.txt)
+          {
+            echo "### Published verified GitHub prerelease"
+            jq -r '.html_url' published-release.json
+            echo
+            echo "Source: $SOURCE_SHA"
+            echo "APK SHA-256: e03b48cfee4a01637f6753a6ad8d8e08b13435b690804ecb7bcf66c0e0002e67"
+            echo "Signing: CI-generated Android Debug certificate; testing only."
+          } >> "$GITHUB_STEP_SUMMARY"
