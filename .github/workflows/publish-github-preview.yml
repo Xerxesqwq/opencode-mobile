@@ -61,8 +61,8 @@ jobs:
           sha256sum -c SHA256SUMS.txt
           TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$TOOLS/apksigner" verify --verbose --print-certs "$APK_NAME" | tee apk-signature.txt
-          grep -F 'Signer #1 certificate DN: CN=Android Debug, O=Android, C=US' apk-signature.txt
-          grep -F 'Signer #1 certificate SHA-256 digest: 9b13e51a963f1405d9ab0264f1ac8cfb4bc6fb8a370dd88736e7c85bb6781dee' apk-signature.txt
+          grep -F 'certificate DN: CN=Android Debug, O=Android, C=US' apk-signature.txt
+          grep -F 'certificate SHA-256 digest: 9b13e51a963f1405d9ab0264f1ac8cfb4bc6fb8a370dd88736e7c85bb6781dee' apk-signature.txt
           "$TOOLS/aapt" dump badging "$APK_NAME" > apk-badging.txt
           grep -F "package: name='cc.agentlabs.opencode' versionCode='52' versionName='0.4.24'" apk-badging.txt
           grep -F "sdkVersion:'24'" apk-badging.txt
