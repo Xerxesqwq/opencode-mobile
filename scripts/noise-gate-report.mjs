@@ -42,9 +42,8 @@
  *   --no-play         skip Play (grades at gated_share=0, i.e. "no credit for uptake")
  *   --project SLUG    default opencode-mobile
  *
- * Neither credential lives on a laptop. Run it through
- * `.github/workflows/sentry-noise-gate-report.yml` (workflow_dispatch), which has
- * both as repo secrets and writes the table to the run summary.
+ * The scheduled workflow is not installed in this fork. For manual use,
+ * configure your own service credentials as above; see docs/ci.md.
  *
  * Exit code is 0 for any *readable* result — an unmet target is a finding to
  * report, not a crash. Non-zero only when the data cannot be obtained.

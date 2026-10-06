@@ -183,9 +183,9 @@ def build_body(reviews, review_ids_marker):
         "",
         "---",
         "",
-        "*This issue is automatically maintained by the "
-        "[triage-reviews workflow](/.github/workflows/triage-reviews.yml). "
-        "It is updated in place as new low-rated reviews appear in the window "
+        "*This issue is maintained by the "
+        "`scripts/triage-reviews.py` script. "
+        "When run, it is updated in place as new low-rated reviews appear in the window "
         "and intentionally contains no author names or raw review text.*",
     ]
     return "\n".join(lines) + "\n"
