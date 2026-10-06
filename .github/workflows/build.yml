@@ -41,6 +41,11 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
       SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+      # Source-map uploads are optional and must not block a basic APK build.
+      # Opt in only after configuring a token with access to this org/project;
+      # the upstream Sentry project in app.json is not usable by every fork.
+      SENTRY_DISABLE_AUTO_UPLOAD: >-
+        ${{ vars.SENTRY_UPLOAD_ENABLED == 'true' && secrets.SENTRY_AUTH_TOKEN != '' && secrets.SENTRY_ORG != '' && secrets.SENTRY_PROJECT != '' && 'false' || 'true' }}
     steps:
       - uses: actions/checkout@v6
 

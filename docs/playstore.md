@@ -141,12 +141,14 @@ automated reporting.
 Until that's implemented, the Play Console UI
 (https://play.google.com/console/u/2/developers/8842655543970815326) is the
 only source of truth for acquisition numbers, checked manually. Review
-volume/rating triage (a related but separate signal) is automated via
-`.github/workflows/triage-reviews.yml` + `scripts/triage-reviews.py`, which
-reads reviews through the Android Publisher API using the
-`PLAY_STORE_SERVICE_ACCOUNT_JSON` GitHub secret (see "Linked GCP resources"
-above) — this is the trusted source for review-based signals, not any
-scraped or manually copied review text.
+volume/rating triage (a related but separate signal) can use
+`scripts/triage-reviews.py`, which reads reviews through the Android Publisher
+API. The scheduled review-triage workflow has been removed from this fork because
+its Play service-account access is not configured. The script remains available
+for manual use with `GOOGLE_SERVICE_ACCOUNT_JSON`, `GH_TOKEN`, and
+`GITHUB_REPOSITORY` set to this fork; it can create
+GitHub issues, so configure the intended account and repository before running.
+See [CI configuration](ci.md).
 
 ---
 

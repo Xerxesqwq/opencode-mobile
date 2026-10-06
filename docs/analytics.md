@@ -210,16 +210,13 @@ neither of which is a pass or a failure, only an absence of evidence. It also in
 model to report the *implied* on-device efficacy, so the 96.9% constant is checked against
 reality rather than assumed.
 
-Neither credential exists on a laptop, so run it in CI and read the job summary:
+The upstream scheduled `Sentry noise-gate report` workflow has been removed from
+this fork because its Sentry/Play credentials are not configured. The reporting
+scripts remain available for manual use with the required service credentials.
+See [CI configuration](ci.md) before restoring external-service automation.
 
-```sh
-gh workflow run "Sentry noise-gate report" -f post=2026-08-21T00:00:00Z..now
-gh run view --log   # or just open the run summary
-```
-
-It also runs itself weekly (Mondays 15:00 UTC) so the trend is recorded whether or not
-anyone asks. Unit tests for the grading model live in `scripts/noise-gate-report.test.mjs`
-and run in the same job that publishes the number.
+Unit tests for the grading model live in `scripts/noise-gate-report.test.mjs` and
+continue to run with the regular `npm test` suite.
 
 ### The quota resets on the 4th — that is the real deadline
 

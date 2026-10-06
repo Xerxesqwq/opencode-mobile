@@ -167,28 +167,17 @@ The correct Azure AI Services endpoint (with actual deployments) is:
 - Use `AzureOpenAI` client from the `openai` Python SDK with `api_version="2024-08-01-preview"`.
 - Vision works: pass `image_url` with `data:image/png;base64,...` in user message content array.
 
-### CI
+### CI in this fork
 
-GitHub Actions workflow: `.github/workflows/cua-smoke.yml`
-Secrets required: `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` (already set on `dzianisv/opencode-mobile`).
+The optional Azure-backed CUA workflow has been removed from this fork because
+its endpoint and model credentials are not configured. It does not run on pushes
+or release tags, and it is not a required merge gate here. The manual script and
+run modes above remain available when a working Azure resource is configured.
 
-**Triggers**: Runs on push to `main` (with path filters) AND on `v*` tags (releases).
-
-**Dispatch inputs** (workflow_dispatch):
-- `scenario`: `showcase` (default) | `e2e`
-- `query`: natural-language test description (enables `--query` mode, overrides scenario)
-- `opencode_url`: override server URL (use Tailscale URL for live server)
-- `e2e_project_dir`, `e2e_model_hint`, `e2e_task`, `e2e_filename`: e2e mode params
-
-### When to run CUA test
-
-**MANDATORY**: Run the CUA smoke test before any merge to `main` or release:
-1. Before merging a PR that touches `src/**`, `app/**`, or `scripts/android-cua-smoke.py`
-2. After creating a release tag — CI runs it automatically
-3. When debugging UI issues — run locally with `--include-xml` for richer context
-4. When validating a specific AI coding task — use `--e2e` or `--query`
-
-If the CUA test fails, do NOT merge or release until fixed.
+Keep the core APK build, typecheck, unit tests, and deterministic Maestro
+activation tests enabled. For UI changes, use the applicable deterministic tests
+and local/manual validation; do not describe an unrun CUA test as passed. See
+[`docs/ci.md`](docs/ci.md) for optional integration configuration.
 
 ## Secrets Management
 
