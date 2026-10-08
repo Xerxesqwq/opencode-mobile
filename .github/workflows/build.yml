@@ -21,7 +21,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Check release version metadata
         run: npm run check:versions
@@ -74,7 +74,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Set Sentry release identifiers
         # sentry.gradle (applied from android/app/build.gradle) defaults the
@@ -149,7 +149,9 @@ jobs:
   # them into the JS bundle here would itself be a source of reproducible-build
   # divergence.
   build-fdroid:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Verify the source-patched flavor on PRs without creating a release tag.
+    # Publishing remains restricted to the separate tag-only release job.
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -188,7 +190,7 @@ jobs:
             ${{ runner.os }}-gradle-fdroid-
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Apply F-Droid source patches
         # Mirrors distribution/fdroid-submission/metadata.yml `Builds:.prebuild`
@@ -222,7 +224,8 @@ jobs:
           cp -a fdroid/expo-application-patches/. \
             node_modules/expo-application/android/src/main/java/expo/modules/application/
 
-      - name: Setup signing
+      - name: Setup release signing
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           if [[ -n "${{ secrets.KEYSTORE_BASE64 }}" ]]; then
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
@@ -240,6 +243,14 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
             echo "Signing: debug keystore (non-release build)"
           fi
+
+      - name: Setup pull-request debug signing
+        if: github.event_name == 'pull_request'
+        run: |
+          keytool -genkey -v -keystore android/app/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          echo "Signing: debug keystore (pull-request verification only)"
 
       - name: Build F-Droid-flavored APK
         working-directory: android

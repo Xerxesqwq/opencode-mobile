@@ -39,3 +39,19 @@ Their scripts remain available for manual use, and the workflows can be
 restored from Git history if those services are configured later. This removes
 their automatic scheduled/push runs; it does not disable the deterministic
 Maestro activation tests or change GitHub notification settings.
+
+## Informational dependency audit
+
+The security workflow now records `npm audit --json` and `npm audit --omit=dev
+--json` results in its summary and uploads both raw reports. This job is
+non-blocking while compatible fixes for the Expo 54 dependency graph are being
+tracked. An unavailable/malformed audit is reported as an error, never as zero
+findings. npm's production graph includes build tooling and does not establish
+APK exploitability. See [the dependency audit](security/dependency-audit-2026-10-08.md)
+for the measured baseline, applied fixes and remaining risks.
+
+The standard APK, unit-test and F-Droid-flavored APK jobs use `npm ci
+--legacy-peer-deps` so verification installs the committed lockfile.
+
+The source-patched F-Droid APK job also runs on pull requests so it can be
+verified without publishing a tag. Release publishing remains tag-only.

@@ -62,5 +62,10 @@
         ".*"
       ]
     }
+  },
+  "overrides": {
+    "@expo/metro-config": {
+      "postcss": "8.5.23"
+    }
   }
 }
