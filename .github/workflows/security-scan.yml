@@ -29,3 +29,34 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependencies:
+    name: Dependency audit (informational)
+    runs-on: ubuntu-latest
+    # Registry availability and existing SDK-54 advisories must not block APKs.
+    # Findings remain visible in the summary and downloadable raw JSON.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Audit the complete lockfile
+        continue-on-error: true
+        run: npm audit --json > npm-audit.json
+      - name: Audit npm production dependencies
+        if: always()
+        continue-on-error: true
+        run: npm audit --omit=dev --json > npm-audit-production.json
+      - name: Summarize both audit results
+        if: always()
+        run: node scripts/summarize-npm-audit.mjs npm-audit.json npm-audit-production.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-audit-${{ github.sha }}
+          path: |
+            npm-audit.json
+            npm-audit-production.json
+          if-no-files-found: error
